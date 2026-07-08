@@ -1,0 +1,61 @@
+{% extends "halaqat/base.html" %}
+{% load static %}
+{% block title %}{{ circle.name }} - مسجد طه{% endblock %}
+{% block content %}
+
+<div id="save-toast" class="save-toast">تم الحفظ ✓</div>
+
+<div class="circle-detail-head">
+  <div class="info">
+    <h2>{{ circle.name }}</h2>
+    <div class="teacher">
+      {% if circle.teacher %}الأستاذ {{ circle.teacher.name }}{% else %}لا يوجد أستاذ محدد{% endif %}
+      {% if attendance_rate_30d is not None %} · نسبة الحضور (30 يوم): {{ attendance_rate_30d }}%{% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="date-form">
+    <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+    <button type="submit">عرض</button>
+  </form>
+</div>
+
+<div class="summary-bar">
+  <div class="summary-chip present"><div class="n" id="cnt-present">{{ present_count }}</div><div class="l">حاضر</div></div>
+  <div class="summary-chip absent"><div class="n" id="cnt-absent">{{ absent_count }}</div><div class="l">غائب</div></div>
+  <div class="summary-chip excused"><div class="n" id="cnt-excused">{{ excused_count }}</div><div class="l">إذن</div></div>
+</div>
+
+<p class="autosave-hint">💡 يتم حفظ الحضور فور الضغط على الخيار — بدون الحاجة لزر حفظ.</p>
+
+{% csrf_token %}
+
+{% if student_rows %}
+<div class="student-table" id="studentTable" data-circle-id="{{ circle.id }}" data-date="{{ selected_date|date:'Y-m-d' }}" data-save-url="{% url 'save_attendance' circle.id %}">
+  {% for row in student_rows %}
+  <div class="student-row" data-student-id="{{ row.student.id }}">
+    <div class="student-name">
+      <div class="avatar">{{ row.student.name|first }}</div>
+      {{ row.student.name }}
+    </div>
+    <div class="tristate">
+      <input type="radio" name="status_{{ row.student.id }}" id="present_{{ row.student.id }}" value="present" {% if row.status == 'present' %}checked{% endif %}>
+      <label for="present_{{ row.student.id }}" class="present">حاضر</label>
+
+      <input type="radio" name="status_{{ row.student.id }}" id="excused_{{ row.student.id }}" value="excused" {% if row.status == 'excused' %}checked{% endif %}>
+      <label for="excused_{{ row.student.id }}" class="excused">إذن</label>
+
+      <input type="radio" name="status_{{ row.student.id }}" id="absent_{{ row.student.id }}" value="absent" {% if row.status == 'absent' %}checked{% endif %}>
+      <label for="absent_{{ row.student.id }}" class="absent">غائب</label>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  لا يوجد طلاب في هذه الحلقة بعد. أضف طلاباً من <a href="{% url 'admin_panel' %}" style="color:var(--primary-dark); font-weight:700;">لوحة التحكم</a>.
+</div>
+{% endif %}
+
+<script src="{% static 'halaqat/js/attendance.js' %}"></script>
+{% endblock %}

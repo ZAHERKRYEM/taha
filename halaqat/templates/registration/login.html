@@ -1,0 +1,33 @@
+{% extends "halaqat/base.html" %}
+{% block title %}تسجيل الدخول - مسجد طه{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-emblem">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 21 V13 C4 8 7.5 5 12 5 C16.5 5 20 8 20 13 V21 Z" fill="#8C5F33" opacity="0.9"/><rect x="10.3" y="15" width="3.4" height="6" rx="1.7" fill="#fff"/></svg>
+    </div>
+    <h1>تسجيل الدخول</h1>
+    <p>الدخول مخصص لمشرف المسجد فقط</p>
+
+    {% if form.errors %}
+      <div class="form-errors">اسم المستخدم أو كلمة المرور غير صحيحة</div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label for="id_username">اسم المستخدم</label>
+        <input type="text" name="username" id="id_username" placeholder="ادخل اسم المستخدم" required autofocus>
+      </div>
+      <div class="field">
+        <label for="id_password">كلمة المرور</label>
+        <input type="password" name="password" id="id_password" placeholder="••••••••" required>
+      </div>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit" class="btn-primary">دخول</button>
+    </form>
+
+    <div class="login-hint">حساب إداري واحد فقط لهذا النظام</div>
+  </div>
+</div>
+{% endblock %}

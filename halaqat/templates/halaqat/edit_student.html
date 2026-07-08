@@ -1,0 +1,32 @@
+{% extends "halaqat/base.html" %}
+{% block title %}تعديل الطالب - مسجد طه{% endblock %}
+{% block content %}
+
+<a href="{% url 'admin_panel' %}" class="back-link">→ رجوع للوحة التحكم</a>
+
+<div class="page-header">
+  <h2>تعديل بيانات: {{ student.name }}</h2>
+  <div class="desc">يمكنك تعديل اسم الطالب، الحلقة، أو الملاحظات</div>
+</div>
+
+<div class="panel" style="max-width:480px;">
+  <form method="post">
+    {% csrf_token %}
+    <div class="field">
+      <label for="{{ form.name.id_for_label }}">اسم الطالب</label>
+      {{ form.name }}
+    </div>
+    <div class="field">
+      <label for="{{ form.circle.id_for_label }}">الحلقة</label>
+      {{ form.circle }}
+    </div>
+    <div class="field">
+      <label for="{{ form.notes.id_for_label }}">ملاحظات (اختياري)</label>
+      {{ form.notes }}
+    </div>
+    {% if form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
+    <button type="submit" class="btn-primary">حفظ التعديلات</button>
+  </form>
+</div>
+
+{% endblock %}

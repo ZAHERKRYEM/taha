@@ -1,0 +1,36 @@
+{% extends "halaqat/base.html" %}
+{% block title %}تعديل الحلقة - مسجد طه{% endblock %}
+{% block content %}
+
+<a href="{% url 'admin_panel' %}" class="back-link">→ رجوع للوحة التحكم</a>
+
+<div class="page-header">
+  <h2>تعديل حلقة: {{ circle.name }}</h2>
+  <div class="desc">يمكنك تعديل اسم الحلقة، الأستاذ المسؤول، أو الوصف</div>
+</div>
+
+<div class="panel" style="max-width:480px;">
+  <form method="post">
+    {% csrf_token %}
+    <div class="field">
+      <label for="{{ form.name.id_for_label }}">اسم الحلقة</label>
+      {{ form.name }}
+    </div>
+    <div class="field">
+      <label for="{{ form.teacher.id_for_label }}">الأستاذ المسؤول</label>
+      {{ form.teacher }}
+    </div>
+    <div class="field">
+      <label for="{{ form.new_teacher_name.id_for_label }}">{{ form.new_teacher_name.label }}</label>
+      {{ form.new_teacher_name }}
+    </div>
+    <div class="field">
+      <label for="{{ form.description.id_for_label }}">وصف مختصر (اختياري)</label>
+      {{ form.description }}
+    </div>
+    {% if form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
+    <button type="submit" class="btn-primary">حفظ التعديلات</button>
+  </form>
+</div>
+
+{% endblock %}

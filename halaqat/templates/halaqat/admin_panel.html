@@ -1,0 +1,109 @@
+{% extends "halaqat/base.html" %}
+{% block title %}لوحة التحكم - مسجد طه{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h2>لوحة التحكم</h2>
+  <div class="desc">إضافة حلقات، أساتذة وطلاب جدد</div>
+</div>
+
+<div class="admin-grid">
+
+  <div class="panel">
+    <h3>➕ إضافة حلقة جديدة</h3>
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label for="{{ circle_form.name.id_for_label }}">اسم الحلقة</label>
+        {{ circle_form.name }}
+      </div>
+      <div class="field">
+        <label for="{{ circle_form.teacher.id_for_label }}">الأستاذ المسؤول</label>
+        {{ circle_form.teacher }}
+      </div>
+      <div class="field">
+        <label for="{{ circle_form.new_teacher_name.id_for_label }}">{{ circle_form.new_teacher_name.label }}</label>
+        {{ circle_form.new_teacher_name }}
+      </div>
+      <div class="field">
+        <label for="{{ circle_form.description.id_for_label }}">وصف مختصر (اختياري)</label>
+        {{ circle_form.description }}
+      </div>
+      {% if circle_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
+      <button type="submit" name="submit_circle" class="btn-primary">حفظ الحلقة</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3>➕ إضافة طالب</h3>
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label for="{{ student_form.name.id_for_label }}">اسم الطالب</label>
+        {{ student_form.name }}
+      </div>
+      <div class="field">
+        <label for="{{ student_form.circle.id_for_label }}">الحلقة</label>
+        {{ student_form.circle }}
+      </div>
+      <div class="field">
+        <label for="{{ student_form.notes.id_for_label }}">ملاحظات (اختياري)</label>
+        {{ student_form.notes }}
+      </div>
+      {% if student_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
+      <button type="submit" name="submit_student" class="btn-primary">حفظ الطالب</button>
+    </form>
+  </div>
+
+</div>
+
+<div class="panel">
+  <h3>📋 الحلقات الحالية</h3>
+  {% if circles %}
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr><th>اسم الحلقة</th><th>الأستاذ</th><th>عدد الطلاب</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for circle in circles %}
+        <tr>
+          <td>{{ circle.name }}</td>
+          <td>{% if circle.teacher %}{{ circle.teacher.name }}{% else %}—{% endif %}</td>
+          <td>{{ circle.student_count }}</td>
+          <td><a href="{% url 'edit_circle' circle.id %}" class="edit-link">✏️ تعديل</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="font-size:13px; color:#9c8a71;">لا توجد حلقات بعد.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <h3>👥 الطلاب الحاليون</h3>
+  {% if students %}
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr><th>اسم الطالب</th><th>الحلقة</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for student in students %}
+        <tr>
+          <td>{{ student.name }}</td>
+          <td>{{ student.circle.name }}</td>
+          <td><a href="{% url 'edit_student' student.id %}" class="edit-link">✏️ تعديل</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="font-size:13px; color:#9c8a71;">لا يوجد طلاب بعد.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

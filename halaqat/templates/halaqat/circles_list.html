@@ -1,0 +1,40 @@
+{% extends "halaqat/base.html" %}
+{% block title %}الحلقات - مسجد طه{% endblock %}
+{% block content %}
+
+<div class="stats-row">
+  <div class="stat-card"><div class="num">{{ total_circles }}</div><div class="lbl">عدد الحلقات</div></div>
+  <div class="stat-card"><div class="num">{{ total_students }}</div><div class="lbl">إجمالي الطلاب</div></div>
+  <div class="stat-card"><div class="num">{{ today|date:"d/m" }}</div><div class="lbl">تاريخ اليوم</div></div>
+</div>
+
+<div class="page-header">
+  <h2>الحلقات القرآنية</h2>
+  <div class="desc">اختر حلقة لعرض الطلاب وتسجيل الحضور</div>
+</div>
+
+{% if circle_cards %}
+<div class="circles-grid">
+  {% for card in circle_cards %}
+  <a href="{% url 'circle_detail' card.circle.id %}" class="circle-card">
+    <div class="circle-icon">📖</div>
+    <h3>{{ card.circle.name }}</h3>
+    <div class="teacher">{% if card.circle.teacher %}الأستاذ {{ card.circle.teacher.name }}{% else %}لا يوجد أستاذ محدد{% endif %}</div>
+    <div class="row">
+      <span>{{ card.student_count }} طالب</span>
+      {% if card.today_rate is not None %}
+        <span class="badge {% if card.today_rate >= 85 %}good{% else %}mid{% endif %}">{{ card.today_rate }}% حضور</span>
+      {% else %}
+        <span class="badge none">لم يُسجَّل بعد</span>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  لا توجد حلقات بعد. يمكنك إضافة حلقة جديدة من <a href="{% url 'admin_panel' %}" style="color:var(--primary-dark); font-weight:700;">لوحة التحكم</a>.
+</div>
+{% endif %}
+
+{% endblock %}
