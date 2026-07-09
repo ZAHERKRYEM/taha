@@ -63,7 +63,7 @@
   <div class="table-scroll">
     <table class="admin-table">
       <thead>
-        <tr><th>اسم الحلقة</th><th>الأستاذ</th><th>عدد الطلاب</th><th></th></tr>
+        <tr><th>اسم الحلقة</th><th>الأستاذ</th><th>عدد الطلاب</th><th colspan="2"></th></tr>
       </thead>
       <tbody>
         {% for circle in circles %}
@@ -72,6 +72,13 @@
           <td>{% if circle.teacher %}{{ circle.teacher.name }}{% else %}—{% endif %}</td>
           <td>{{ circle.student_count }}</td>
           <td><a href="{% url 'edit_circle' circle.id %}" class="edit-link">✏️ تعديل</a></td>
+          <td>
+            <form method="post" action="{% url 'delete_circle' circle.id %}"
+                  onsubmit="return confirm('سيتم حذف حلقة «{{ circle.name }}» وجميع طلابها وسجلات حضورهم نهائياً. هل أنت متأكد؟');">
+              {% csrf_token %}
+              <button type="submit" class="delete-link">🗑 حذف</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -88,7 +95,7 @@
   <div class="table-scroll">
     <table class="admin-table">
       <thead>
-        <tr><th>اسم الطالب</th><th>الحلقة</th><th></th></tr>
+        <tr><th>اسم الطالب</th><th>الحلقة</th><th colspan="2"></th></tr>
       </thead>
       <tbody>
         {% for student in students %}
@@ -96,6 +103,13 @@
           <td>{{ student.name }}</td>
           <td>{{ student.circle.name }}</td>
           <td><a href="{% url 'edit_student' student.id %}" class="edit-link">✏️ تعديل</a></td>
+          <td>
+            <form method="post" action="{% url 'delete_student' student.id %}"
+                  onsubmit="return confirm('سيتم حذف الطالب «{{ student.name }}» وجميع سجلات حضوره نهائياً. هل أنت متأكد؟');">
+              {% csrf_token %}
+              <button type="submit" class="delete-link">🗑 حذف</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

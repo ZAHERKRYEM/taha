@@ -97,7 +97,7 @@ button, input, select, textarea { font-family: inherit; }
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--shadow);
 }
-.brand-logo svg { width: 20px; height: 20px; }
+.brand-logo svg, .brand-logo img { width: 24px; height: 24px; object-fit: contain; }
 .brand-text { min-width: 0; }
 .brand-name { font-weight: 700; font-size: 16px; color: var(--primary-deep); white-space: nowrap; }
 .brand-sub { font-size: 10px; color: #9c8a71; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -208,6 +208,9 @@ button, input, select, textarea { font-family: inherit; }
   background: var(--white); border-radius: 16px; border: 1px dashed var(--accent-light);
 }
 
+.quick-links { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.quick-links .btn-secondary { width: auto; flex: 1; min-width: 160px; }
+
 /* ================= تفاصيل الحلقة / الحضور ================= */
 .circle-detail-head {
   background: var(--white); border-radius: 16px; padding: 16px;
@@ -301,6 +304,10 @@ button, input, select, textarea { font-family: inherit; }
   width: 100%; padding: 11px; border-radius: 10px; font-weight: 700; font-size: 13px;
   border: 1.5px solid var(--accent-light); background: var(--white); color: var(--primary-deep); cursor: pointer;
 }
+.export-btn {
+  display: block; text-align: center; margin-bottom: 6px;
+}
+.summary-chip.absent { flex: 1; }
 
 /* ================= تسجيل الدخول ================= */
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
@@ -316,7 +323,7 @@ button, input, select, textarea { font-family: inherit; }
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px -6px rgba(177,127,74,0.5);
 }
-.login-emblem svg { width: 34px; height: 34px; }
+.login-emblem svg, .login-emblem img { width: 40px; height: 40px; object-fit: contain; }
 .login-card h1 { font-size: 19px; color: var(--primary-deep); margin-bottom: 3px; }
 .login-card p { font-size: 12px; color: #9c8a71; margin-bottom: 24px; font-weight: 500; }
 .field { text-align: right; margin-bottom: 14px; }
@@ -344,6 +351,11 @@ button, input, select, textarea { font-family: inherit; }
 .edit-link {
   display: inline-block; font-size: 11.5px; font-weight: 700; color: var(--primary-dark);
   background: var(--accent-light); padding: 5px 10px; border-radius: 8px; white-space: nowrap;
+}
+.delete-link {
+  display: inline-block; font-size: 11.5px; font-weight: 700; color: var(--error);
+  background: var(--error-bg); padding: 5px 10px; border-radius: 8px; white-space: nowrap;
+  border: none; cursor: pointer; font-family: inherit;
 }
 
 .back-link {

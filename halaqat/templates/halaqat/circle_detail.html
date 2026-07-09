@@ -18,6 +18,10 @@
     <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
     <button type="submit">عرض</button>
   </form>
+  <a class="btn-secondary export-btn" style="margin-top:8px;"
+     href="{% url 'export_attendance_csv' %}?date={{ selected_date|date:'Y-m-d' }}&circle={{ circle.id }}">
+    📤 تصدير حضور هذه الحلقة (CSV)
+  </a>
 </div>
 
 <div class="summary-bar">

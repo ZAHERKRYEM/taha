@@ -13,6 +13,11 @@
   <div class="desc">اختر حلقة لعرض الطلاب وتسجيل الحضور</div>
 </div>
 
+<div class="quick-links">
+  <a href="{% url 'absentees_list' %}" class="btn-secondary">🚫 عرض الغائبين اليوم</a>
+  <a href="{% url 'export_attendance_csv' %}?date={{ today|date:'Y-m-d' }}" class="btn-secondary">📤 تصدير حضور اليوم (CSV)</a>
+</div>
+
 {% if circle_cards %}
 <div class="circles-grid">
   {% for card in circle_cards %}

@@ -1,10 +1,11 @@
 {% extends "halaqat/base.html" %}
+{% load static %}
 {% block title %}تسجيل الدخول - مسجد طه{% endblock %}
 {% block content %}
 <div class="login-wrap">
   <div class="login-card">
     <div class="login-emblem">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M4 21 V13 C4 8 7.5 5 12 5 C16.5 5 20 8 20 13 V21 Z" fill="#8C5F33" opacity="0.9"/><rect x="10.3" y="15" width="3.4" height="6" rx="1.7" fill="#fff"/></svg>
+      <img src="{% static 'halaqat/images/logo.svg' %}" alt="شعار مسجد طه">
     </div>
     <h1>تسجيل الدخول</h1>
     <p>الدخول مخصص لمشرف المسجد فقط</p>

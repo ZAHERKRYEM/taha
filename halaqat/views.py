@@ -1,8 +1,10 @@
+import csv
 import datetime
+import io
 
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -186,3 +188,102 @@ def edit_student(request, pk):
         'active_nav': 'admin',
     }
     return render(request, 'halaqat/edit_student.html', context)
+
+
+@login_required
+@require_POST
+def delete_circle(request, pk):
+    circle = get_object_or_404(Circle, pk=pk)
+    name = circle.name
+    circle.delete()  # يحذف تلقائياً طلاب الحلقة وسجلات حضورهم (CASCADE)
+    messages.success(request, f'تم حذف حلقة "{name}" وجميع بياناتها المرتبطة بها.')
+    return redirect('admin_panel')
+
+
+@login_required
+@require_POST
+def delete_student(request, pk):
+    student = get_object_or_404(Student, pk=pk)
+    name = student.name
+    student.delete()  # يحذف تلقائياً سجلات حضوره (CASCADE)
+    messages.success(request, f'تم حذف الطالب "{name}".')
+    return redirect('admin_panel')
+
+
+def _parse_date_param(request, param='date'):
+    date_str = request.GET.get(param)
+    if date_str:
+        try:
+            return datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    return timezone.now().date()
+
+
+@login_required
+def absentees_list(request):
+    """عرض الطلاب الغائبين في تاريخ محدد، مجمّعين حسب الحلقة."""
+    selected_date = _parse_date_param(request)
+    circle_id = request.GET.get('circle')
+
+    records = Attendance.objects.filter(
+        date=selected_date, status='absent'
+    ).select_related('student', 'circle').order_by('circle__name', 'student__name')
+
+    if circle_id:
+        records = records.filter(circle_id=circle_id)
+
+    groups = {}
+    for record in records:
+        groups.setdefault(record.circle, []).append(record.student)
+
+    grouped_absentees = [
+        {'circle': circle, 'students': students}
+        for circle, students in groups.items()
+    ]
+
+    context = {
+        'selected_date': selected_date,
+        'grouped_absentees': grouped_absentees,
+        'total_absent': records.count(),
+        'circles': Circle.objects.all(),
+        'selected_circle_id': int(circle_id) if circle_id else None,
+        'active_nav': 'absentees',
+    }
+    return render(request, 'halaqat/absentees.html', context)
+
+
+@login_required
+def export_attendance_csv(request):
+    """تصدير سجل الحضور والغياب ليوم محدد (لكل الحلقات أو حلقة واحدة) كملف CSV."""
+    selected_date = _parse_date_param(request)
+    circle_id = request.GET.get('circle')
+
+    circles = Circle.objects.select_related('teacher').all()
+    if circle_id:
+        circles = circles.filter(pk=circle_id)
+
+    buffer = io.StringIO()
+    buffer.write('\ufeff')  # BOM ليقرأ Excel النص العربي بشكل صحيح
+    writer = csv.writer(buffer)
+    writer.writerow(['الحلقة', 'الأستاذ', 'اسم الطالب', 'التاريخ', 'الحالة'])
+
+    for circle in circles:
+        existing = {
+            a.student_id: a.get_status_display()
+            for a in Attendance.objects.filter(circle=circle, date=selected_date)
+        }
+        for student in circle.students.all():
+            status_display = existing.get(student.id, 'لم يُسجَّل')
+            writer.writerow([
+                circle.name,
+                circle.teacher.name if circle.teacher else '',
+                student.name,
+                selected_date.isoformat(),
+                status_display,
+            ])
+
+    filename = f'attendance_{selected_date.isoformat()}.csv'
+    response = HttpResponse(buffer.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
