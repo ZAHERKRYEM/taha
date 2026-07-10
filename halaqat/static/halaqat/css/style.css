@@ -3,28 +3,23 @@
    تصميم متجاوب Mobile-First مستوحى من ألوان الشعار
    ====================================================== */
 
-/* ---------- الخط: Dubai ----------
-   ضع ملفات الخط هنا: halaqat/static/halaqat/fonts/
-   Dubai-Regular.woff2 / Dubai-Medium.woff2 / Dubai-Bold.woff2
-   في حال عدم توفر الملفات، سيُستخدم البديل النظامي تلقائياً. */
+/* ---------- الخط: Dubai (مضمّن فعلياً داخل المشروع) ---------- */
 @font-face {
   font-family: 'Dubai';
-  src: local('Dubai'),
-       url('../fonts/Dubai-Regular.woff2') format('woff2');
+  src: url('../fonts/Dubai-Regular.ttf') format('truetype');
   font-weight: 400;
   font-display: swap;
 }
 @font-face {
   font-family: 'Dubai';
-  src: local('Dubai Medium'),
-       url('../fonts/Dubai-Medium.woff2') format('woff2');
+  src: url('../fonts/Dubai-Medium.ttf') format('truetype');
   font-weight: 500;
   font-display: swap;
 }
 @font-face {
+  /* لا يوجد ملف Bold مستقل، فنستخدم Medium لوزن 700 لتفادي التثقيل الصناعي القبيح من المتصفح */
   font-family: 'Dubai';
-  src: local('Dubai Bold'),
-       url('../fonts/Dubai-Bold.woff2') format('woff2');
+  src: url('../fonts/Dubai-Medium.ttf') format('truetype');
   font-weight: 700;
   font-display: swap;
 }

@@ -9,7 +9,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Teacher, Circle, Student, Attendance
+from .models import Teacher, Circle, Student, Attendance, TeacherAttendance
 from .forms import CircleForm, StudentForm
 
 
@@ -75,6 +75,13 @@ def circle_detail(request, circle_id):
     absent_count = sum(1 for s in student_rows if s['status'] == 'absent')
     excused_count = sum(1 for s in student_rows if s['status'] == 'excused')
 
+    teacher_status = ''
+    if circle.teacher:
+        ta = TeacherAttendance.objects.filter(
+            teacher=circle.teacher, circle=circle, date=selected_date
+        ).first()
+        teacher_status = ta.status if ta else ''
+
     context = {
         'circle': circle,
         'student_rows': student_rows,
@@ -83,6 +90,7 @@ def circle_detail(request, circle_id):
         'absent_count': absent_count,
         'excused_count': excused_count,
         'attendance_rate_30d': circle.attendance_rate(30),
+        'teacher_status': teacher_status,
         'active_nav': 'circles',
     }
     return render(request, 'halaqat/circle_detail.html', context)
@@ -91,9 +99,10 @@ def circle_detail(request, circle_id):
 @login_required
 @require_POST
 def save_attendance(request, circle_id):
-    """حفظ فوري لحالة حضور طالب واحد عبر AJAX - بدون زر حفظ."""
+    """حفظ فوري لحالة حضور طالب أو الأستاذ عبر AJAX - بدون زر حفظ."""
     circle = get_object_or_404(Circle, pk=circle_id)
-    student_id = request.POST.get('student_id')
+    kind = request.POST.get('kind', 'student')
+    entity_id = request.POST.get('entity_id')
     status = request.POST.get('status')
     date_str = request.POST.get('date')
 
@@ -105,12 +114,19 @@ def save_attendance(request, circle_id):
     except (ValueError, TypeError):
         return JsonResponse({'ok': False, 'error': 'تاريخ غير صالح'}, status=400)
 
-    student = get_object_or_404(Student, pk=student_id, circle=circle)
-
-    Attendance.objects.update_or_create(
-        student=student, date=selected_date,
-        defaults={'circle': circle, 'status': status},
-    )
+    if kind == 'teacher':
+        if not circle.teacher or str(circle.teacher.id) != str(entity_id):
+            return JsonResponse({'ok': False, 'error': 'لا يوجد أستاذ مطابق لهذه الحلقة'}, status=400)
+        TeacherAttendance.objects.update_or_create(
+            teacher=circle.teacher, circle=circle, date=selected_date,
+            defaults={'status': status},
+        )
+    else:
+        student = get_object_or_404(Student, pk=entity_id, circle=circle)
+        Attendance.objects.update_or_create(
+            student=student, date=selected_date,
+            defaults={'circle': circle, 'status': status},
+        )
 
     records = Attendance.objects.filter(circle=circle, date=selected_date)
     counts = {
@@ -269,6 +285,19 @@ def export_attendance_csv(request):
     writer.writerow(['الحلقة', 'الأستاذ', 'اسم الطالب', 'التاريخ', 'الحالة'])
 
     for circle in circles:
+        if circle.teacher:
+            ta = TeacherAttendance.objects.filter(
+                teacher=circle.teacher, circle=circle, date=selected_date
+            ).first()
+            teacher_status_display = ta.get_status_display() if ta else 'لم يُسجَّل'
+            writer.writerow([
+                circle.name,
+                circle.teacher.name,
+                f'{circle.teacher.name} (الأستاذ)',
+                selected_date.isoformat(),
+                teacher_status_display,
+            ])
+
         existing = {
             a.student_id: a.get_status_display()
             for a in Attendance.objects.filter(circle=circle, date=selected_date)

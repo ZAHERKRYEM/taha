@@ -34,10 +34,34 @@
 
 {% csrf_token %}
 
+{% if circle.teacher %}
+<div class="teacher-attendance-box" id="teacherBox" data-save-url="{% url 'save_attendance' circle.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
+  <div class="student-row teacher-row" data-kind="teacher" data-entity-id="{{ circle.teacher.id }}">
+    <div class="student-name">
+      <div class="avatar teacher-avatar">👨‍🏫</div>
+      <div>
+        {{ circle.teacher.name }}
+        <span class="role-tag">الأستاذ المسؤول</span>
+      </div>
+    </div>
+    <div class="tristate">
+      <input type="radio" name="status_teacher_{{ circle.teacher.id }}" id="present_teacher_{{ circle.teacher.id }}" value="present" {% if teacher_status == 'present' %}checked{% endif %}>
+      <label for="present_teacher_{{ circle.teacher.id }}" class="present">حاضر</label>
+
+      <input type="radio" name="status_teacher_{{ circle.teacher.id }}" id="excused_teacher_{{ circle.teacher.id }}" value="excused" {% if teacher_status == 'excused' %}checked{% endif %}>
+      <label for="excused_teacher_{{ circle.teacher.id }}" class="excused">إذن</label>
+
+      <input type="radio" name="status_teacher_{{ circle.teacher.id }}" id="absent_teacher_{{ circle.teacher.id }}" value="absent" {% if teacher_status == 'absent' %}checked{% endif %}>
+      <label for="absent_teacher_{{ circle.teacher.id }}" class="absent">غائب</label>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if student_rows %}
 <div class="student-table" id="studentTable" data-circle-id="{{ circle.id }}" data-date="{{ selected_date|date:'Y-m-d' }}" data-save-url="{% url 'save_attendance' circle.id %}">
   {% for row in student_rows %}
-  <div class="student-row" data-student-id="{{ row.student.id }}">
+  <div class="student-row" data-kind="student" data-entity-id="{{ row.student.id }}">
     <div class="student-name">
       <div class="avatar">{{ row.student.name|first }}</div>
       {{ row.student.name }}

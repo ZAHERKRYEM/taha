@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Teacher, Circle, Student, Attendance
+from .models import Teacher, Circle, Student, Attendance, TeacherAttendance
 
 
 @admin.register(Teacher)
@@ -25,5 +25,12 @@ class StudentAdmin(admin.ModelAdmin):
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = ('student', 'circle', 'date', 'status')
+    list_filter = ('circle', 'status', 'date')
+    date_hierarchy = 'date'
+
+
+@admin.register(TeacherAttendance)
+class TeacherAttendanceAdmin(admin.ModelAdmin):
+    list_display = ('teacher', 'circle', 'date', 'status')
     list_filter = ('circle', 'status', 'date')
     date_hierarchy = 'date'

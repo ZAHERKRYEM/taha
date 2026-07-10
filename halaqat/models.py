@@ -108,3 +108,31 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f'{self.student.name} - {self.date} - {self.get_status_display()}'
+
+
+class TeacherAttendance(models.Model):
+    """سجل حضور يومي للأستاذ المسؤول عن حلقة - بنفس منطق حضور الطلاب"""
+
+    STATUS_CHOICES = Attendance.STATUS_CHOICES
+
+    teacher = models.ForeignKey(
+        Teacher, verbose_name='الأستاذ',
+        on_delete=models.CASCADE, related_name='attendance_records',
+    )
+    circle = models.ForeignKey(
+        Circle, verbose_name='الحلقة',
+        on_delete=models.CASCADE, related_name='teacher_attendance_records',
+    )
+    date = models.DateField('التاريخ', default=timezone.now)
+    status = models.CharField('الحالة', max_length=10, choices=STATUS_CHOICES, default='present')
+    recorded_at = models.DateTimeField('وقت التسجيل', auto_now=True)
+
+    class Meta:
+        verbose_name = 'حضور أستاذ'
+        verbose_name_plural = 'حضور الأساتذة'
+        # الأستاذ لا يمكن أن يملك أكثر من سجل حضور لنفس الحلقة في نفس اليوم
+        unique_together = [('teacher', 'circle', 'date')]
+        ordering = ['-date']
+
+    def __str__(self):
+        return f'{self.teacher.name} - {self.circle.name} - {self.date} - {self.get_status_display()}'
