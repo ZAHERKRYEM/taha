@@ -1,16 +1,13 @@
-// حفظ تلقائي لحالة الحضور فور الضغط على الخيار - بدون زر حفظ
+// حفظ تلقائي لحالة الحضور (طالب أو أستاذ) فور الضغط على الخيار - بدون زر حفظ
 document.addEventListener('DOMContentLoaded', function () {
-  const table = document.getElementById('studentTable');
-  if (!table) return;
-
-  const circleId = table.dataset.circleId;
-  const date = table.dataset.date;
-  const saveUrl = table.dataset.saveUrl;
-  const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+  const csrfInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
   const toast = document.getElementById('save-toast');
+  if (!csrfInput) return;
+  const csrfToken = csrfInput.value;
 
   let toastTimer = null;
   function showToast(ok) {
+    if (!toast) return;
     toast.textContent = ok ? 'تم الحفظ ✓' : 'تعذّر الحفظ، حاول مجدداً';
     toast.classList.toggle('error', !ok);
     toast.classList.add('show');
@@ -19,23 +16,38 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function updateCounts(counts) {
-    document.getElementById('cnt-present').textContent = counts.present;
-    document.getElementById('cnt-absent').textContent = counts.absent;
-    document.getElementById('cnt-excused').textContent = counts.excused;
+    if (!counts) return;
+    const p = document.getElementById('cnt-present');
+    const a = document.getElementById('cnt-absent');
+    const x = document.getElementById('cnt-excused');
+    if (p) p.textContent = counts.present;
+    if (a) a.textContent = counts.absent;
+    if (x) x.textContent = counts.excused;
   }
 
-  table.addEventListener('change', function (e) {
+  // نستمع على مستوى الصفحة كلها عشان يشتغل مع صف الأستاذ (#teacherBox) وصفوف الطلاب (#studentTable) مع بعض
+  document.addEventListener('change', function (e) {
     const input = e.target;
     if (input.type !== 'radio') return;
 
     const row = input.closest('.student-row');
-    const studentId = row.dataset.studentId;
+    if (!row) return;
+
+    // كل صف (طالب أو أستاذ) موجود جوه container عليه data-save-url و data-date
+    const container = row.closest('[data-save-url]');
+    if (!container) return;
+
+    const saveUrl = container.dataset.saveUrl;
+    const date = container.dataset.date;
+    const kind = row.dataset.kind || 'student';
+    const entityId = row.dataset.entityId;
     const status = input.value;
 
     row.classList.add('saving');
 
     const formData = new URLSearchParams();
-    formData.append('student_id', studentId);
+    formData.append('kind', kind);
+    formData.append('entity_id', entityId);
     formData.append('status', status);
     formData.append('date', date);
 
