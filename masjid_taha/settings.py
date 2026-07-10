@@ -12,7 +12,9 @@ SECRET_KEY = 'django-insecure-CHANGE-THIS-KEY-BEFORE-PRODUCTION-1234567890'
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
-
+CSRF_TRUSTED_ORIGINS = [
+    "https://taha-9f3c.onrender.com",
+]
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
