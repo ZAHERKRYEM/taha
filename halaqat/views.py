@@ -22,7 +22,7 @@ def circles_list(request):
     for circle in circles:
         total_students = circle.student_count
         today_records = Attendance.objects.filter(circle=circle, date=today)
-        present_today = today_records.filter(status='present').count()
+        present_today = today_records.filter(status__in=['present', 'absent']).count()
         rate = None
         if today_records.exists():
             counted = today_records.exclude(status='excused').count()
