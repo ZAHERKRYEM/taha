@@ -82,6 +82,13 @@ def circle_detail(request, circle_id):
         ).first()
         teacher_status = ta.status if ta else ''
 
+    # للتنقل بين الحلقات دون الخروج من الصفحة (أزرار سابق/تالي + قائمة منسدلة)
+    all_circles = list(Circle.objects.order_by('name'))
+    ids = [c.id for c in all_circles]
+    idx = ids.index(circle.id) if circle.id in ids else None
+    prev_circle = all_circles[idx - 1] if idx is not None and idx > 0 else None
+    next_circle = all_circles[idx + 1] if idx is not None and idx < len(all_circles) - 1 else None
+
     context = {
         'circle': circle,
         'student_rows': student_rows,
@@ -91,6 +98,9 @@ def circle_detail(request, circle_id):
         'excused_count': excused_count,
         'attendance_rate_30d': circle.attendance_rate(30),
         'teacher_status': teacher_status,
+        'all_circles': all_circles,
+        'prev_circle': prev_circle,
+        'next_circle': next_circle,
         'active_nav': 'circles',
     }
     return render(request, 'halaqat/circle_detail.html', context)
@@ -238,35 +248,71 @@ def _parse_date_param(request, param='date'):
 
 @login_required
 def absentees_list(request):
-    """عرض الطلاب الغائبين في تاريخ محدد، مجمّعين حسب الحلقة."""
+    """عرض الطلاب الغائبين (وقسم للطلاب المسجَّلين إذن) في تاريخ محدد، مع إمكانية تعديل الحالة مباشرة."""
     selected_date = _parse_date_param(request)
     circle_id = request.GET.get('circle')
 
-    records = Attendance.objects.filter(
-        date=selected_date, status='absent'
-    ).select_related('student', 'circle').order_by('circle__name', 'student__name')
+    def build_groups(status):
+        records = Attendance.objects.filter(
+            date=selected_date, status=status
+        ).select_related('student', 'circle').order_by('circle__name', 'student__name')
+        if circle_id:
+            records = records.filter(circle_id=circle_id)
 
-    if circle_id:
-        records = records.filter(circle_id=circle_id)
+        groups = {}
+        for record in records:
+            groups.setdefault(record.circle, []).append(record.student)
 
-    groups = {}
-    for record in records:
-        groups.setdefault(record.circle, []).append(record.student)
+        grouped = []
+        for circle, students in groups.items():
+            rows = []
+            for student in students:
+                rows.append({
+                    'student': student,
+                    'status': status,
+                    'week_absences': student.absence_count(7, selected_date),
+                    'month_absences': student.absence_count(30, selected_date),
+                })
+            grouped.append({'circle': circle, 'rows': rows})
+        return grouped, records.count()
 
-    grouped_absentees = [
-        {'circle': circle, 'students': students}
-        for circle, students in groups.items()
-    ]
+    grouped_absentees, total_absent = build_groups('absent')
+    grouped_excused, total_excused = build_groups('excused')
 
     context = {
         'selected_date': selected_date,
         'grouped_absentees': grouped_absentees,
-        'total_absent': records.count(),
+        'grouped_excused': grouped_excused,
+        'total_absent': total_absent,
+        'total_excused': total_excused,
         'circles': Circle.objects.all(),
         'selected_circle_id': int(circle_id) if circle_id else None,
         'active_nav': 'absentees',
     }
     return render(request, 'halaqat/absentees.html', context)
+
+
+@login_required
+def search_students(request):
+    """بحث فوري عن طالب بالاسم عبر AJAX، يعيد اسمه واسم حلقته لتحويله إليها مباشرة."""
+    query = request.GET.get('q', '').strip()
+    results = []
+    if query:
+        students = (
+            Student.objects.select_related('circle')
+            .filter(name__icontains=query)
+            .order_by('name')[:15]
+        )
+        results = [
+            {
+                'id': s.id,
+                'name': s.name,
+                'circle_id': s.circle_id,
+                'circle_name': s.circle.name,
+            }
+            for s in students
+        ]
+    return JsonResponse({'results': results})
 
 
 @login_required

@@ -1,4 +1,6 @@
-// حفظ تلقائي لحالة الحضور (طالب أو أستاذ) فور الضغط على الخيار - بدون زر حفظ
+// حفظ تلقائي لحالة الحضور فور الضغط على الخيار - بدون زر حفظ
+// يعمل بشكل عام على أي صف يحمل data-save-url / data-kind / data-entity-id / data-date
+// (صفحة تفاصيل الحلقة وصفحة الغائبين كلتاهما تستخدم نفس الآلية)
 document.addEventListener('DOMContentLoaded', function () {
   const csrfInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
   const toast = document.getElementById('save-toast');
@@ -6,9 +8,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const csrfToken = csrfInput.value;
 
   let toastTimer = null;
-  function showToast(ok) {
+  function showToast(ok, msg) {
     if (!toast) return;
-    toast.textContent = ok ? 'تم الحفظ ✓' : 'تعذّر الحفظ، حاول مجدداً';
+    toast.textContent = msg || (ok ? 'تم الحفظ ✓' : 'تعذّر الحفظ، حاول مجدداً');
     toast.classList.toggle('error', !ok);
     toast.classList.add('show');
     clearTimeout(toastTimer);
@@ -16,37 +18,28 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function updateCounts(counts) {
-    if (!counts) return;
     const p = document.getElementById('cnt-present');
     const a = document.getElementById('cnt-absent');
-    const x = document.getElementById('cnt-excused');
+    const e = document.getElementById('cnt-excused');
     if (p) p.textContent = counts.present;
     if (a) a.textContent = counts.absent;
-    if (x) x.textContent = counts.excused;
+    if (e) e.textContent = counts.excused;
   }
 
-  // نستمع على مستوى الصفحة كلها عشان يشتغل مع صف الأستاذ (#teacherBox) وصفوف الطلاب (#studentTable) مع بعض
-  document.addEventListener('change', function (e) {
+  document.body.addEventListener('change', function (e) {
     const input = e.target;
     if (input.type !== 'radio') return;
 
-    const row = input.closest('.student-row');
+    const row = input.closest('[data-save-url]');
     if (!row) return;
 
-    // كل صف (طالب أو أستاذ) موجود جوه container عليه data-save-url و data-date
-    const container = row.closest('[data-save-url]');
-    if (!container) return;
-
-    const saveUrl = container.dataset.saveUrl;
-    const date = container.dataset.date;
-    const kind = row.dataset.kind || 'student';
-    const entityId = row.dataset.entityId;
+    const { saveUrl, kind, entityId, date } = row.dataset;
     const status = input.value;
 
     row.classList.add('saving');
 
     const formData = new URLSearchParams();
-    formData.append('kind', kind);
+    formData.append('kind', kind || 'student');
     formData.append('entity_id', entityId);
     formData.append('status', status);
     formData.append('date', date);
@@ -63,10 +56,21 @@ document.addEventListener('DOMContentLoaded', function () {
       .then((data) => {
         row.classList.remove('saving');
         if (data.ok) {
-          updateCounts(data.counts);
+          if (data.counts) updateCounts(data.counts);
           showToast(true);
+
+          // في صفحة الغائبين: إن تغيّرت حالة طالب من "غائب/إذن" لحالة أخرى، أخفِ صفه تلقائياً
+          if (row.classList.contains('resolvable-row')) {
+            const originalStatus = row.dataset.originalStatus;
+            if (status !== originalStatus) {
+              row.classList.add('resolved');
+              setTimeout(() => {
+                row.remove();
+              }, 450);
+            }
+          }
         } else {
-          showToast(false);
+          showToast(false, data.error || 'تعذّر الحفظ');
         }
       })
       .catch(() => {

@@ -5,6 +5,26 @@
 
 <div id="save-toast" class="save-toast">تم الحفظ ✓</div>
 
+<div class="circle-switcher">
+  {% if prev_circle %}
+    <a href="{% url 'circle_detail' prev_circle.id %}?date={{ selected_date|date:'Y-m-d' }}" class="switch-btn" title="{{ prev_circle.name }}">◀ السابقة</a>
+  {% else %}
+    <span class="switch-btn disabled">◀ السابقة</span>
+  {% endif %}
+
+  <select class="circle-jump" onchange="if(this.value) location.href=this.value;">
+    {% for c in all_circles %}
+      <option value="{% url 'circle_detail' c.id %}?date={{ selected_date|date:'Y-m-d' }}" {% if c.id == circle.id %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+
+  {% if next_circle %}
+    <a href="{% url 'circle_detail' next_circle.id %}?date={{ selected_date|date:'Y-m-d' }}" class="switch-btn" title="{{ next_circle.name }}">التالية ▶</a>
+  {% else %}
+    <span class="switch-btn disabled">التالية ▶</span>
+  {% endif %}
+</div>
+
 <div class="circle-detail-head">
   <div class="info">
     <h2>{{ circle.name }}</h2>
@@ -35,7 +55,7 @@
 
 {% if circle.teacher %}
 <div class="teacher-attendance-box" id="teacherBox" data-save-url="{% url 'save_attendance' circle.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
-  <div class="student-row teacher-row" data-kind="teacher" data-entity-id="{{ circle.teacher.id }}">
+  <div class="student-row teacher-row" data-kind="teacher" data-entity-id="{{ circle.teacher.id }}" data-save-url="{% url 'save_attendance' circle.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
     <div class="student-name">
       <div class="avatar teacher-avatar">👨‍🏫</div>
       <div>
@@ -60,7 +80,7 @@
 {% if student_rows %}
 <div class="student-table" id="studentTable" data-circle-id="{{ circle.id }}" data-date="{{ selected_date|date:'Y-m-d' }}" data-save-url="{% url 'save_attendance' circle.id %}">
   {% for row in student_rows %}
-  <div class="student-row" data-kind="student" data-entity-id="{{ row.student.id }}">
+  <div class="student-row" data-kind="student" data-entity-id="{{ row.student.id }}" data-save-url="{% url 'save_attendance' circle.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
     <div class="student-name">
       <div class="avatar">{{ row.student.name|first }}</div>
       {{ row.student.name }}
@@ -84,5 +104,5 @@
 </div>
 {% endif %}
 
-<script src="{% static 'halaqat/js/attendance.js' %}?v=2"></script>
+<script src="{% static 'halaqat/js/attendance.js' %}?v=3"></script>
 {% endblock %}

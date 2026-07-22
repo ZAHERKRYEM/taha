@@ -16,4 +16,5 @@ urlpatterns = [
     path('admin-panel/', views.admin_panel, name='admin_panel'),
     path('absentees/', views.absentees_list, name='absentees_list'),
     path('export/attendance/', views.export_attendance_csv, name='export_attendance_csv'),
+    path('search-students/', views.search_students, name='search_students'),
 ]

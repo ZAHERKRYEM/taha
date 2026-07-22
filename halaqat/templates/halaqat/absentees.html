@@ -1,10 +1,14 @@
 {% extends "halaqat/base.html" %}
+{% load static %}
 {% block title %}الغائبون - مسجد طه{% endblock %}
 {% block content %}
 
+<div id="save-toast" class="save-toast">تم الحفظ ✓</div>
+{% csrf_token %}
+
 <div class="page-header">
   <h2>الطلاب الغائبون</h2>
-  <div class="desc">قائمة الطلاب المسجَّلين "غائب" في تاريخ محدد</div>
+  <div class="desc">يمكنك تعديل حالة أي طالب مباشرة من هذه الصفحة وسيُحفظ فوراً</div>
 </div>
 
 <div class="circle-detail-head">
@@ -21,34 +25,37 @@
 </div>
 
 <div class="summary-bar">
-  <div class="summary-chip absent"><div class="n">{{ total_absent }}</div><div class="l">إجمالي الغياب في هذا اليوم</div></div>
+  <div class="summary-chip absent"><div class="n">{{ total_absent }}</div><div class="l">غائب اليوم</div></div>
+  <div class="summary-chip excused"><div class="n">{{ total_excused }}</div><div class="l">إذن اليوم</div></div>
 </div>
 
 <a class="btn-secondary export-btn" href="{% url 'export_attendance_csv' %}?date={{ selected_date|date:'Y-m-d' }}{% if selected_circle_id %}&circle={{ selected_circle_id }}{% endif %}">
   📤 تصدير حضور هذا اليوم (CSV)
 </a>
 
+<p class="autosave-hint" style="margin-top:14px;">💡 تغيير الحالة هنا يُحفظ تلقائياً، وسيختفي الطالب من هذه القائمة إن لم يعد "غائب".</p>
+
+<h3 style="margin-top:20px; color:var(--primary-deep); font-size:15px;">🚫 الغائبون</h3>
 {% if grouped_absentees %}
   {% for group in grouped_absentees %}
-  <div class="panel" style="margin-top:16px;">
-    <h3>{{ group.circle.name }} <span style="font-weight:500; color:#9c8a71; font-size:12px;">({{ group.students|length }} غائب)</span></h3>
-    <div class="student-table">
-      {% for student in group.students %}
-      <div class="student-row" style="flex-direction:row; align-items:center; justify-content:space-between;">
-        <div class="student-name">
-          <div class="avatar">{{ student.name|first }}</div>
-          {{ student.name }}
-        </div>
-        <span class="badge" style="background:var(--error-bg); color:var(--error);">غائب</span>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
+    {% include "halaqat/_editable_attendance_group.html" with group=group selected_date=selected_date count_label="غائب" %}
   {% endfor %}
 {% else %}
-<div class="empty-state" style="margin-top:16px;">
+<div class="empty-state" style="margin-top:12px;">
   لا يوجد طلاب مسجَّلون "غائب" في هذا التاريخ 🎉
 </div>
 {% endif %}
 
+<h3 style="margin-top:28px; color:var(--warning); font-size:15px;">🟡 المسجَّلون إذن</h3>
+{% if grouped_excused %}
+  {% for group in grouped_excused %}
+    {% include "halaqat/_editable_attendance_group.html" with group=group selected_date=selected_date count_label="إذن" %}
+  {% endfor %}
+{% else %}
+<div class="empty-state" style="margin-top:12px;">
+  لا يوجد طلاب مسجَّلون "إذن" في هذا التاريخ
+</div>
+{% endif %}
+
+<script src="{% static 'halaqat/js/attendance.js' %}?v=3"></script>
 {% endblock %}

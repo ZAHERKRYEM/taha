@@ -1,4 +1,5 @@
 {% extends "halaqat/base.html" %}
+{% load static %}
 {% block title %}الحلقات - مسجد طه{% endblock %}
 {% block content %}
 
@@ -6,6 +7,12 @@
   <div class="stat-card"><div class="num">{{ total_circles }}</div><div class="lbl">عدد الحلقات</div></div>
   <div class="stat-card"><div class="num">{{ total_students }}</div><div class="lbl">إجمالي الطلاب</div></div>
   <div class="stat-card"><div class="num">{{ today|date:"d/m" }}</div><div class="lbl">تاريخ اليوم</div></div>
+</div>
+
+<div class="search-box">
+  <input type="text" id="studentSearch" data-search-url="{% url 'search_students' %}" placeholder="🔍 ابحث عن طالب بالاسم..." autocomplete="off">
+  <span class="search-icon">🔍</span>
+  <div class="search-results" id="searchResults"></div>
 </div>
 
 <div class="page-header">
@@ -42,4 +49,5 @@
 </div>
 {% endif %}
 
+<script src="{% static 'halaqat/js/search.js' %}"></script>
 {% endblock %}

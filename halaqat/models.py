@@ -77,6 +77,14 @@ class Student(models.Model):
         present = qs.filter(status='present').count()
         return round((present / total) * 100)
 
+    def absence_count(self, days, before_date=None):
+        """عدد أيام الغياب خلال آخر (days) يوماً، محسوبة قبل تاريخ محدد (افتراضياً اليوم)."""
+        before_date = before_date or timezone.now().date()
+        since = before_date - timezone.timedelta(days=days - 1)
+        return Attendance.objects.filter(
+            student=self, status='absent', date__gte=since, date__lte=before_date,
+        ).count()
+
 
 class Attendance(models.Model):
     """سجل حضور يومي لطالب في حلقة - سجل تاريخي بالتاريخ"""

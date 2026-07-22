@@ -1,0 +1,35 @@
+{% load static %}
+<div class="panel" style="margin-top:16px;">
+  <h3>{{ group.circle.name }} <span style="font-weight:500; color:#9c8a71; font-size:12px;">({{ group.rows|length }} {{ count_label }})</span></h3>
+  <div class="student-table">
+    {% for row in group.rows %}
+    <div class="student-row resolvable-row"
+         data-kind="student"
+         data-entity-id="{{ row.student.id }}"
+         data-save-url="{% url 'save_attendance' group.circle.id %}"
+         data-date="{{ selected_date|date:'Y-m-d' }}"
+         data-original-status="{{ row.status }}">
+      <div class="student-name">
+        <div class="avatar">{{ row.student.name|first }}</div>
+        <div>
+          {{ row.student.name }}
+          <div class="absence-stats">
+            <span>غياب الأسبوع: {{ row.week_absences }}</span>
+            <span>غياب الشهر: {{ row.month_absences }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="tristate">
+        <input type="radio" name="abs_status_{{ row.student.id }}" id="abs_present_{{ row.student.id }}" value="present" {% if row.status == 'present' %}checked{% endif %}>
+        <label for="abs_present_{{ row.student.id }}" class="present">حاضر</label>
+
+        <input type="radio" name="abs_status_{{ row.student.id }}" id="abs_excused_{{ row.student.id }}" value="excused" {% if row.status == 'excused' %}checked{% endif %}>
+        <label for="abs_excused_{{ row.student.id }}" class="excused">إذن</label>
+
+        <input type="radio" name="abs_status_{{ row.student.id }}" id="abs_absent_{{ row.student.id }}" value="absent" {% if row.status == 'absent' %}checked{% endif %}>
+        <label for="abs_absent_{{ row.student.id }}" class="absent">غائب</label>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
