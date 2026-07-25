@@ -57,6 +57,38 @@
 
 </div>
 
+<div class="panel" style="margin-bottom:16px;">
+  <h3>🎓 إنشاء دورة / درس إضافي جديد</h3>
+  <p style="font-size:12px; color:#9c8a71; margin-bottom:14px;">دورة أو درس لفئة محددة من الطلاب (من أي حلقة)، بحضور مستقل عن الحلقة الأساسية</p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="field">
+      <label for="{{ course_form.name.id_for_label }}">اسم الدورة / الدرس</label>
+      {{ course_form.name }}
+    </div>
+    <div class="field">
+      <label for="{{ course_form.teacher.id_for_label }}">الأستاذ / المحاضر المسؤول (اختياري)</label>
+      {{ course_form.teacher }}
+    </div>
+    <div class="field">
+      <label for="{{ course_form.new_teacher_name.id_for_label }}">{{ course_form.new_teacher_name.label }}</label>
+      {{ course_form.new_teacher_name }}
+    </div>
+    <div class="field">
+      <label for="{{ course_form.description.id_for_label }}">وصف مختصر (اختياري)</label>
+      {{ course_form.description }}
+    </div>
+    <div class="field">
+      <label>{{ course_form.students.label }}</label>
+      <div class="checkbox-list">
+        {{ course_form.students }}
+      </div>
+    </div>
+    {% if course_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
+    <button type="submit" name="submit_course" class="btn-primary">حفظ الدورة</button>
+  </form>
+</div>
+
 <div class="panel">
   <h3>📋 الحلقات الحالية</h3>
   {% if circles %}
@@ -118,6 +150,38 @@
   </div>
   {% else %}
   <p style="font-size:13px; color:#9c8a71;">لا يوجد طلاب بعد.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <h3>🎓 الدورات والدروس الإضافية الحالية</h3>
+  {% if courses %}
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr><th>الاسم</th><th>الأستاذ</th><th>عدد المشاركين</th><th colspan="2"></th></tr>
+      </thead>
+      <tbody>
+        {% for course in courses %}
+        <tr>
+          <td>{{ course.name }}</td>
+          <td>{% if course.teacher %}{{ course.teacher.name }}{% else %}—{% endif %}</td>
+          <td>{{ course.student_count }}</td>
+          <td><a href="{% url 'edit_course' course.id %}" class="edit-link">✏️ تعديل</a></td>
+          <td>
+            <form method="post" action="{% url 'delete_course' course.id %}"
+                  onsubmit="return confirm('سيتم حذف «{{ course.name }}» وجميع سجلات حضورها نهائياً. هل أنت متأكد؟');">
+              {% csrf_token %}
+              <button type="submit" class="delete-link">🗑 حذف</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="font-size:13px; color:#9c8a71;">لا توجد دورات أو دروس إضافية بعد.</p>
   {% endif %}
 </div>
 

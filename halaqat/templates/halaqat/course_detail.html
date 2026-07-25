@@ -1,0 +1,113 @@
+{% extends "halaqat/base.html" %}
+{% load static %}
+{% block title %}{{ course.name }} - مسجد طه{% endblock %}
+{% block content %}
+
+<div id="save-toast" class="save-toast">تم الحفظ ✓</div>
+
+<div class="circle-switcher">
+  {% if prev_course %}
+    <a href="{% url 'course_detail' prev_course.id %}?date={{ selected_date|date:'Y-m-d' }}" class="switch-btn" title="{{ prev_course.name }}">◀ السابقة</a>
+  {% else %}
+    <span class="switch-btn disabled">◀ السابقة</span>
+  {% endif %}
+
+  <select class="circle-jump" onchange="if(this.value) location.href=this.value;">
+    {% for c in all_courses %}
+      <option value="{% url 'course_detail' c.id %}?date={{ selected_date|date:'Y-m-d' }}" {% if c.id == course.id %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+
+  {% if next_course %}
+    <a href="{% url 'course_detail' next_course.id %}?date={{ selected_date|date:'Y-m-d' }}" class="switch-btn" title="{{ next_course.name }}">التالية ▶</a>
+  {% else %}
+    <span class="switch-btn disabled">التالية ▶</span>
+  {% endif %}
+</div>
+
+<div class="circle-detail-head">
+  <div class="info">
+    <h2>🎓 {{ course.name }}</h2>
+    <div class="teacher">
+      {% if course.teacher %}الأستاذ {{ course.teacher.name }}{% else %}بدون أستاذ محدد{% endif %}
+      {% if attendance_rate_30d is not None %} · نسبة الحضور (30 يوم): {{ attendance_rate_30d }}%{% endif %}
+      {% if course.description %} · {{ course.description }}{% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="date-form">
+    <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+    <button type="submit">عرض</button>
+  </form>
+  <a class="btn-secondary export-btn" style="margin-top:8px;"
+     href="{% url 'export_course_attendance_csv' %}?date={{ selected_date|date:'Y-m-d' }}&course={{ course.id }}">
+    📤 تصدير حضور هذه الدورة (CSV)
+  </a>
+</div>
+
+<div class="summary-bar">
+  <div class="summary-chip present"><div class="n" id="cnt-present">{{ present_count }}</div><div class="l">حاضر</div></div>
+  <div class="summary-chip absent"><div class="n" id="cnt-absent">{{ absent_count }}</div><div class="l">غائب</div></div>
+  <div class="summary-chip excused"><div class="n" id="cnt-excused">{{ excused_count }}</div><div class="l">إذن</div></div>
+</div>
+
+<p class="autosave-hint">💡 يتم حفظ الحضور فور الضغط على الخيار — بدون الحاجة لزر حفظ.</p>
+
+{% csrf_token %}
+
+{% if course.teacher %}
+<div class="teacher-attendance-box">
+  <div class="student-row teacher-row" data-kind="teacher" data-entity-id="{{ course.teacher.id }}" data-save-url="{% url 'save_course_attendance' course.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
+    <div class="student-name">
+      <div class="avatar teacher-avatar">👨‍🏫</div>
+      <div>
+        {{ course.teacher.name }}
+        <span class="role-tag">الأستاذ / المحاضر</span>
+      </div>
+    </div>
+    <div class="tristate">
+      <input type="radio" name="status_teacher_{{ course.teacher.id }}" id="c_present_teacher_{{ course.teacher.id }}" value="present" {% if teacher_status == 'present' %}checked{% endif %}>
+      <label for="c_present_teacher_{{ course.teacher.id }}" class="present">حاضر</label>
+
+      <input type="radio" name="status_teacher_{{ course.teacher.id }}" id="c_excused_teacher_{{ course.teacher.id }}" value="excused" {% if teacher_status == 'excused' %}checked{% endif %}>
+      <label for="c_excused_teacher_{{ course.teacher.id }}" class="excused">إذن</label>
+
+      <input type="radio" name="status_teacher_{{ course.teacher.id }}" id="c_absent_teacher_{{ course.teacher.id }}" value="absent" {% if teacher_status == 'absent' %}checked{% endif %}>
+      <label for="c_absent_teacher_{{ course.teacher.id }}" class="absent">غائب</label>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if student_rows %}
+<div class="student-table">
+  {% for row in student_rows %}
+  <div class="student-row" data-kind="student" data-entity-id="{{ row.student.id }}" data-save-url="{% url 'save_course_attendance' course.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
+    <div class="student-name">
+      <div class="avatar">{{ row.student.name|first }}</div>
+      <div>
+        {{ row.student.name }}
+        <div class="absence-stats"><span>{{ row.student.circle.name }}</span></div>
+      </div>
+    </div>
+    <div class="tristate">
+      <input type="radio" name="status_{{ row.student.id }}" id="c_present_{{ row.student.id }}" value="present" {% if row.status == 'present' %}checked{% endif %}>
+      <label for="c_present_{{ row.student.id }}" class="present">حاضر</label>
+
+      <input type="radio" name="status_{{ row.student.id }}" id="c_excused_{{ row.student.id }}" value="excused" {% if row.status == 'excused' %}checked{% endif %}>
+      <label for="c_excused_{{ row.student.id }}" class="excused">إذن</label>
+
+      <input type="radio" name="status_{{ row.student.id }}" id="c_absent_{{ row.student.id }}" value="absent" {% if row.status == 'absent' %}checked{% endif %}>
+      <label for="c_absent_{{ row.student.id }}" class="absent">غائب</label>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  لا يوجد طلاب مشاركون في هذه الدورة بعد. أضفهم من <a href="{% url 'edit_course' course.id %}" style="color:var(--primary-dark); font-weight:700;">صفحة تعديل الدورة</a>.
+</div>
+{% endif %}
+
+<script src="{% static 'halaqat/js/attendance.js' %}?v=3"></script>
+{% endblock %}

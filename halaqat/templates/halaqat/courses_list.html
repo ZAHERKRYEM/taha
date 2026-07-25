@@ -1,0 +1,53 @@
+{% extends "halaqat/base.html" %}
+{% block title %}الدورات والدروس الإضافية - مسجد طه{% endblock %}
+{% block content %}
+
+<div class="stats-row">
+  <div class="stat-card"><div class="num">{{ total_courses }}</div><div class="lbl">عدد الدورات</div></div>
+  <div class="stat-card"><div class="num">{{ today|date:"d/m" }}</div><div class="lbl">تاريخ اليوم</div></div>
+</div>
+
+<div class="page-header">
+  <h2>الدورات والدروس الإضافية</h2>
+  <div class="desc">دروس أو دورات لفئة محددة من الطلاب، بحضور مستقل عن الحلقة الأساسية</div>
+</div>
+
+<div class="quick-links">
+  <a href="{% url 'admin_panel' %}" class="btn-secondary">➕ إنشاء دورة/درس جديد</a>
+  <a href="{% url 'export_course_attendance_csv' %}?date={{ today|date:'Y-m-d' }}" class="btn-secondary">📤 تصدير حضور اليوم (CSV)</a>
+</div>
+
+<p class="autosave-hint">
+  🟢 إطار أخضر = تم تسجيل حضور جميع المشاركين اليوم · 🔴 إطار أحمر = ما زال هناك من لم يُسجَّل له حضور بعد
+</p>
+
+{% if course_cards %}
+<div class="circles-grid">
+  {% for card in course_cards %}
+  <a href="{% url 'course_detail' card.course.id %}" class="circle-card status-{{ card.card_status }}">
+    {% if card.card_status == 'complete' %}
+      <span class="card-status-dot dot-complete" title="اكتمل تسجيل الحضور اليوم"></span>
+    {% elif card.card_status == 'incomplete' %}
+      <span class="card-status-dot dot-incomplete" title="لم يكتمل تسجيل الحضور اليوم"></span>
+    {% endif %}
+    <div class="circle-icon">🎓</div>
+    <h3>{{ card.course.name }}</h3>
+    <div class="teacher">{% if card.course.teacher %}الأستاذ {{ card.course.teacher.name }}{% else %}بدون أستاذ محدد{% endif %}</div>
+    <div class="row">
+      <span>{{ card.student_count }} مشارك</span>
+      {% if card.today_rate is not None %}
+        <span class="badge {% if card.today_rate >= 85 %}good{% else %}mid{% endif %}">{{ card.today_rate }}% حضور</span>
+      {% else %}
+        <span class="badge none">لم يُسجَّل بعد</span>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  لا توجد دورات أو دروس إضافية بعد. أنشئ واحدة من <a href="{% url 'admin_panel' %}" style="color:var(--primary-dark); font-weight:700;">لوحة التحكم</a>.
+</div>
+{% endif %}
+
+{% endblock %}

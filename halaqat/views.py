@@ -9,8 +9,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Teacher, Circle, Student, Attendance, TeacherAttendance
-from .forms import CircleForm, StudentForm
+from .models import (
+    Teacher, Circle, Student, Attendance, TeacherAttendance,
+    Course, CourseAttendance, CourseTeacherAttendance,
+)
+from .forms import CircleForm, StudentForm, CourseForm
 
 
 @login_required
@@ -27,10 +30,22 @@ def circles_list(request):
         if today_records.exists():
             counted = today_records.exclude(status='excused').count()
             rate = round((present_today / counted) * 100) if counted else None
+
+        progress = circle.attendance_progress(today)
+        if progress['total'] == 0:
+            card_status = 'empty'
+        elif progress['complete']:
+            card_status = 'complete'
+        else:
+            card_status = 'incomplete'
+
         circle_cards.append({
             'circle': circle,
             'student_count': total_students,
             'today_rate': rate,
+            'card_status': card_status,
+            'progress_total': progress['total'],
+            'progress_recorded': progress['recorded'],
         })
 
     context = {
@@ -147,10 +162,187 @@ def save_attendance(request, circle_id):
     return JsonResponse({'ok': True, 'counts': counts})
 
 
+# ============================================================
+#  الدورات والدروس الإضافية (فئة محددة من الطلاب، حضور مستقل)
+# ============================================================
+
+@login_required
+def courses_list(request):
+    courses = Course.objects.select_related('teacher').prefetch_related('students')
+    today = timezone.now().date()
+
+    course_cards = []
+    for course in courses:
+        total_students = course.student_count
+        today_records = CourseAttendance.objects.filter(course=course, date=today)
+        present_today = today_records.filter(status='present').count()
+        rate = None
+        if today_records.exists():
+            counted = today_records.exclude(status='excused').count()
+            rate = round((present_today / counted) * 100) if counted else None
+
+        progress = course.attendance_progress(today)
+        if progress['total'] == 0:
+            card_status = 'empty'
+        elif progress['complete']:
+            card_status = 'complete'
+        else:
+            card_status = 'incomplete'
+
+        course_cards.append({
+            'course': course,
+            'student_count': total_students,
+            'today_rate': rate,
+            'card_status': card_status,
+        })
+
+    context = {
+        'course_cards': course_cards,
+        'total_courses': courses.count(),
+        'today': today,
+        'active_nav': 'courses',
+    }
+    return render(request, 'halaqat/courses_list.html', context)
+
+
+@login_required
+def course_detail(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    students = course.students.select_related('circle').order_by('name')
+
+    date_str = request.GET.get('date')
+    if date_str:
+        try:
+            selected_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            selected_date = timezone.now().date()
+    else:
+        selected_date = timezone.now().date()
+
+    existing = {
+        a.student_id: a.status
+        for a in CourseAttendance.objects.filter(course=course, date=selected_date)
+    }
+
+    student_rows = []
+    for student in students:
+        student_rows.append({
+            'student': student,
+            'status': existing.get(student.id, ''),
+        })
+
+    present_count = sum(1 for s in student_rows if s['status'] == 'present')
+    absent_count = sum(1 for s in student_rows if s['status'] == 'absent')
+    excused_count = sum(1 for s in student_rows if s['status'] == 'excused')
+
+    teacher_status = ''
+    if course.teacher:
+        cta = CourseTeacherAttendance.objects.filter(
+            teacher=course.teacher, course=course, date=selected_date
+        ).first()
+        teacher_status = cta.status if cta else ''
+
+    all_courses = list(Course.objects.order_by('name'))
+    ids = [c.id for c in all_courses]
+    idx = ids.index(course.id) if course.id in ids else None
+    prev_course = all_courses[idx - 1] if idx is not None and idx > 0 else None
+    next_course = all_courses[idx + 1] if idx is not None and idx < len(all_courses) - 1 else None
+
+    context = {
+        'course': course,
+        'student_rows': student_rows,
+        'selected_date': selected_date,
+        'present_count': present_count,
+        'absent_count': absent_count,
+        'excused_count': excused_count,
+        'attendance_rate_30d': course.attendance_rate(30),
+        'teacher_status': teacher_status,
+        'all_courses': all_courses,
+        'prev_course': prev_course,
+        'next_course': next_course,
+        'active_nav': 'courses',
+    }
+    return render(request, 'halaqat/course_detail.html', context)
+
+
+@login_required
+@require_POST
+def save_course_attendance(request, course_id):
+    """حفظ فوري لحالة حضور طالب أو الأستاذ ضمن دورة/درس إضافي عبر AJAX."""
+    course = get_object_or_404(Course, pk=course_id)
+    kind = request.POST.get('kind', 'student')
+    entity_id = request.POST.get('entity_id')
+    status = request.POST.get('status')
+    date_str = request.POST.get('date')
+
+    if status not in dict(Attendance.STATUS_CHOICES):
+        return JsonResponse({'ok': False, 'error': 'حالة غير صالحة'}, status=400)
+
+    try:
+        selected_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'ok': False, 'error': 'تاريخ غير صالح'}, status=400)
+
+    if kind == 'teacher':
+        if not course.teacher or str(course.teacher.id) != str(entity_id):
+            return JsonResponse({'ok': False, 'error': 'لا يوجد أستاذ مطابق لهذه الدورة'}, status=400)
+        CourseTeacherAttendance.objects.update_or_create(
+            teacher=course.teacher, course=course, date=selected_date,
+            defaults={'status': status},
+        )
+    else:
+        student = get_object_or_404(Student, pk=entity_id)
+        if not course.students.filter(pk=student.pk).exists():
+            return JsonResponse({'ok': False, 'error': 'الطالب ليس ضمن هذه الدورة'}, status=400)
+        CourseAttendance.objects.update_or_create(
+            student=student, course=course, date=selected_date,
+            defaults={'status': status},
+        )
+
+    records = CourseAttendance.objects.filter(course=course, date=selected_date)
+    counts = {
+        'present': records.filter(status='present').count(),
+        'absent': records.filter(status='absent').count(),
+        'excused': records.filter(status='excused').count(),
+    }
+    return JsonResponse({'ok': True, 'counts': counts})
+
+
+@login_required
+def edit_course(request, pk):
+    course = get_object_or_404(Course, pk=pk)
+    if request.method == 'POST':
+        form = CourseForm(request.POST, instance=course)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'تم تحديث بيانات الدورة بنجاح.')
+            return redirect('admin_panel')
+    else:
+        form = CourseForm(instance=course)
+
+    context = {
+        'form': form,
+        'course': course,
+        'active_nav': 'admin',
+    }
+    return render(request, 'halaqat/edit_course.html', context)
+
+
+@login_required
+@require_POST
+def delete_course(request, pk):
+    course = get_object_or_404(Course, pk=pk)
+    name = course.name
+    course.delete()
+    messages.success(request, f'تم حذف "{name}" وجميع سجلات حضورها.')
+    return redirect('admin_panel')
+
+
 @login_required
 def admin_panel(request):
     circle_form = CircleForm()
     student_form = StudentForm()
+    course_form = CourseForm()
 
     if request.method == 'POST':
         if 'submit_circle' in request.POST:
@@ -165,12 +357,20 @@ def admin_panel(request):
                 student_form.save()
                 messages.success(request, 'تمت إضافة الطالب بنجاح.')
                 return redirect('admin_panel')
+        elif 'submit_course' in request.POST:
+            course_form = CourseForm(request.POST)
+            if course_form.is_valid():
+                course_form.save()
+                messages.success(request, 'تمت إضافة الدورة/الدرس بنجاح.')
+                return redirect('admin_panel')
 
     context = {
         'circle_form': circle_form,
         'student_form': student_form,
+        'course_form': course_form,
         'circles': Circle.objects.select_related('teacher').all(),
         'students': Student.objects.select_related('circle').all(),
+        'courses': Course.objects.select_related('teacher').prefetch_related('students').all(),
         'active_nav': 'admin',
     }
     return render(request, 'halaqat/admin_panel.html', context)
@@ -359,6 +559,55 @@ def export_attendance_csv(request):
             ])
 
     filename = f'attendance_{selected_date.isoformat()}.csv'
+    response = HttpResponse(buffer.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def export_course_attendance_csv(request):
+    """تصدير سجل حضور دورة/درس إضافي ليوم محدد كملف CSV."""
+    selected_date = _parse_date_param(request)
+    course_id = request.GET.get('course')
+
+    courses = Course.objects.select_related('teacher').all()
+    if course_id:
+        courses = courses.filter(pk=course_id)
+
+    buffer = io.StringIO()
+    buffer.write('\ufeff')
+    writer = csv.writer(buffer)
+    writer.writerow(['الدورة/الدرس', 'الأستاذ', 'اسم الطالب', 'التاريخ', 'الحالة'])
+
+    for course in courses:
+        if course.teacher:
+            cta = CourseTeacherAttendance.objects.filter(
+                teacher=course.teacher, course=course, date=selected_date
+            ).first()
+            teacher_status_display = cta.get_status_display() if cta else 'لم يُسجَّل'
+            writer.writerow([
+                course.name,
+                course.teacher.name,
+                f'{course.teacher.name} (الأستاذ)',
+                selected_date.isoformat(),
+                teacher_status_display,
+            ])
+
+        existing = {
+            a.student_id: a.get_status_display()
+            for a in CourseAttendance.objects.filter(course=course, date=selected_date)
+        }
+        for student in course.students.all():
+            status_display = existing.get(student.id, 'لم يُسجَّل')
+            writer.writerow([
+                course.name,
+                course.teacher.name if course.teacher else '',
+                student.name,
+                selected_date.isoformat(),
+                status_display,
+            ])
+
+    filename = f'course_attendance_{selected_date.isoformat()}.csv'
     response = HttpResponse(buffer.getvalue(), content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response

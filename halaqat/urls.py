@@ -17,4 +17,11 @@ urlpatterns = [
     path('absentees/', views.absentees_list, name='absentees_list'),
     path('export/attendance/', views.export_attendance_csv, name='export_attendance_csv'),
     path('search-students/', views.search_students, name='search_students'),
+
+    path('courses/', views.courses_list, name='courses_list'),
+    path('courses/<int:course_id>/', views.course_detail, name='course_detail'),
+    path('courses/<int:course_id>/attendance/save/', views.save_course_attendance, name='save_course_attendance'),
+    path('courses/<int:pk>/edit/', views.edit_course, name='edit_course'),
+    path('courses/<int:pk>/delete/', views.delete_course, name='delete_course'),
+    path('export/course-attendance/', views.export_course_attendance_csv, name='export_course_attendance_csv'),
 ]

@@ -25,10 +25,19 @@
   <a href="{% url 'export_attendance_csv' %}?date={{ today|date:'Y-m-d' }}" class="btn-secondary">📤 تصدير حضور اليوم (CSV)</a>
 </div>
 
+<p class="autosave-hint">
+  🟢 إطار أخضر = تم تسجيل حضور جميع الطلاب والأستاذ اليوم · 🔴 إطار أحمر = ما زال هناك من لم يُسجَّل له حضور بعد
+</p>
+
 {% if circle_cards %}
 <div class="circles-grid">
   {% for card in circle_cards %}
-  <a href="{% url 'circle_detail' card.circle.id %}" class="circle-card">
+  <a href="{% url 'circle_detail' card.circle.id %}" class="circle-card status-{{ card.card_status }}">
+    {% if card.card_status == 'complete' %}
+      <span class="card-status-dot dot-complete" title="اكتمل تسجيل الحضور اليوم"></span>
+    {% elif card.card_status == 'incomplete' %}
+      <span class="card-status-dot dot-incomplete" title="لم يكتمل تسجيل الحضور اليوم"></span>
+    {% endif %}
     <div class="circle-icon">📖</div>
     <h3>{{ card.circle.name }}</h3>
     <div class="teacher">{% if card.circle.teacher %}الأستاذ {{ card.circle.teacher.name }}{% else %}لا يوجد أستاذ محدد{% endif %}</div>
@@ -40,6 +49,11 @@
         <span class="badge none">لم يُسجَّل بعد</span>
       {% endif %}
     </div>
+    {% if card.card_status == 'incomplete' %}
+      <div class="progress-note incomplete">{{ card.progress_recorded }} من {{ card.progress_total }} تم تسجيلهم</div>
+    {% elif card.card_status == 'complete' %}
+      <div class="progress-note complete">اكتمل التسجيل ✓</div>
+    {% endif %}
   </a>
   {% endfor %}
 </div>

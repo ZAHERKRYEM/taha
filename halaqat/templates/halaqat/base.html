@@ -26,6 +26,7 @@
 
   <nav class="top-nav">
     <a href="{% url 'circles_list' %}" class="{% if active_nav == 'circles' %}active{% endif %}">الحلقات</a>
+    <a href="{% url 'courses_list' %}" class="{% if active_nav == 'courses' %}active{% endif %}">الدورات</a>
     <a href="{% url 'absentees_list' %}" class="{% if active_nav == 'absentees' %}active{% endif %}">الغائبون</a>
     <a href="{% url 'admin_panel' %}" class="{% if active_nav == 'admin' %}active{% endif %}">لوحة التحكم</a>
   </nav>
@@ -56,6 +57,9 @@
   <a href="{% url 'circles_list' %}" class="{% if active_nav == 'circles' %}active{% endif %}">
     <span class="ic">📖</span> الحلقات
   </a>
+  <a href="{% url 'courses_list' %}" class="{% if active_nav == 'courses' %}active{% endif %}">
+    <span class="ic">🎓</span> الدورات
+  </a>
   <a href="{% url 'absentees_list' %}" class="{% if active_nav == 'absentees' %}active{% endif %}">
     <span class="ic">🚫</span> الغائبون
   </a>
@@ -64,7 +68,7 @@
   </a>
   <form action="{% url 'logout' %}" method="post" style="display:contents">
     {% csrf_token %}
-    <button type="submit" style="all:unset; flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; font-weight:600; color:#9c8a71; padding:8px 4px;">
+    <button type="submit" style="all:unset; flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; font-weight:600; color:#9c8a71; padding:7px 2px; white-space:nowrap;">
       <span class="ic">⏻</span> خروج
     </button>
   </form>

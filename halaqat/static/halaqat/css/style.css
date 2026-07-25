@@ -126,10 +126,11 @@ button, input, select, textarea { font-family: inherit; }
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 .bottom-nav a {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font-size: 11px; font-weight: 600; color: #9c8a71; padding: 8px 4px;
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 10px; font-weight: 600; color: #9c8a71; padding: 7px 2px;
+  white-space: nowrap;
 }
-.bottom-nav a .ic { font-size: 19px; }
+.bottom-nav a .ic { font-size: 17px; }
 .bottom-nav a.active { color: var(--primary-dark); }
 
 /* ================= المحتوى ================= */
@@ -173,6 +174,7 @@ button, input, select, textarea { font-family: inherit; }
   gap: 12px;
 }
 .circle-card {
+  position: relative;
   background: var(--white);
   border-radius: 40px 40px 14px 14px / 28px 28px 14px 14px;
   padding: 22px 14px 16px;
@@ -182,6 +184,31 @@ button, input, select, textarea { font-family: inherit; }
   transition: transform .15s;
 }
 .circle-card:active { transform: scale(0.97); }
+
+/* تلوين إطار الكرت حسب اكتمال تسجيل الحضور اليوم: أحمر = ناقص، أخضر = مكتمل */
+.circle-card.status-incomplete {
+  border: 2px solid var(--error);
+  box-shadow: 0 10px 26px -14px rgba(181,84,75,0.45);
+}
+.circle-card.status-complete {
+  border: 2px solid var(--success);
+  box-shadow: 0 10px 26px -14px rgba(90,147,103,0.45);
+}
+.circle-card.status-empty {
+  border: 1px dashed var(--accent-light);
+}
+.circle-card .card-status-dot {
+  position: absolute; top: 10px; left: 10px;
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.circle-card .card-status-dot.dot-incomplete { background: var(--error); }
+.circle-card .card-status-dot.dot-complete { background: var(--success); }
+.circle-card .progress-note {
+  font-size: 9.5px; font-weight: 700; margin-top: 4px;
+}
+.progress-note.incomplete { color: var(--error); }
+.progress-note.complete { color: var(--success); }
+
 .circle-icon {
   width: 44px; height: 44px; margin: 0 auto 10px;
   border-radius: 50%; background: var(--accent-light);
@@ -306,6 +333,7 @@ button, input, select, textarea { font-family: inherit; }
 .teacher-row {
   background: linear-gradient(135deg, var(--bg-alt), var(--white));
 }
+.teacher-attendance-box { margin-bottom: 14px; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--accent-light); }
 .teacher-avatar {
   background: linear-gradient(160deg, var(--primary), var(--primary-dark));
   font-size: 15px;
@@ -404,6 +432,23 @@ button, input, select, textarea { font-family: inherit; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--primary); background: #fff; }
 .login-hint { margin-top: 18px; font-size: 10.5px; color: #b7a78d; }
 .form-errors { color: var(--error); font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+
+.checkbox-list {
+  max-height: 260px; overflow-y: auto;
+  border: 1.5px solid var(--accent-light); border-radius: 10px;
+  background: var(--bg); padding: 6px 4px;
+}
+.checkbox-list ul { list-style: none; }
+.checkbox-list li { border-bottom: 1px solid var(--bg-alt); }
+.checkbox-list li:last-child { border-bottom: none; }
+.checkbox-list label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; font-size: 13px; font-weight: 500; color: var(--ink);
+  cursor: pointer;
+}
+.checkbox-list input[type="checkbox"] {
+  width: 17px; height: 17px; accent-color: var(--primary); flex-shrink: 0;
+}
 
 /* ================= لوحة التحكم ================= */
 .admin-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 22px; }
