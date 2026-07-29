@@ -18,7 +18,7 @@ from .forms import CircleForm, StudentForm, CourseForm
 
 @login_required
 def circles_list(request):
-    circles = Circle.objects.select_related('teacher').all()
+    circles = Circle.objects.select_related('teacher').order_by('id')
     today = timezone.now().date()
 
     circle_cards = []
