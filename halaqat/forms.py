@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 from .models import Teacher, Circle, Student, Course
 
 
@@ -49,16 +50,44 @@ class CircleForm(forms.ModelForm):
 class StudentForm(forms.ModelForm):
     class Meta:
         model = Student
-        fields = ['name', 'circle', 'notes']
+        fields = ['name', 'circle', 'phone', 'notes']
         labels = {
             'name': 'اسم الطالب',
             'circle': 'الحلقة',
+            'phone': 'رقم الهاتف',
             'notes': 'ملاحظات',
         }
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'الاسم الكامل'}),
+            'phone': forms.TextInput(attrs={'placeholder': 'رقم الهاتف (اختياري)'}),
             'notes': forms.TextInput(attrs={'placeholder': 'رقم ولي الأمر، ملاحظات... (اختياري)'}),
         }
+
+
+class WhatsAppAbsentForm(forms.Form):
+    date = forms.DateField(
+        label='تاريخ الغياب',
+        initial=timezone.now().date(),
+        widget=forms.DateInput(attrs={'type': 'date'})
+    )
+    circle = forms.ModelChoiceField(
+        queryset=Circle.objects.none(),
+        required=False,
+        label='الحلقة (اختياري)',
+        empty_label='كل الحلقات'
+    )
+    message = forms.CharField(
+        label='نص الرسالة',
+        widget=forms.Textarea(attrs={
+            'rows': 6,
+            'placeholder': 'مثال: السلام عليكم ورحمة الله وبركاته\nحياكم الله\n🔴 لأخذ العلم قد تغيب ابنكم {student_name} عن المسجد اليوم {date}.\n👈🏻 يرجى منكم تبرير الغياب في المرات القادمة قبل الغياب\n    ولكم جزيل الشكر🌷\n\nإدارة المسجد',
+        }),
+        initial='🍀 السلام عليكم ورحمة الله وبركاته\n      حياكم الله\n🔴 لأخذ العلم قد تغيب ابنكم {student_name} عن المسجد اليوم {date}.\n👈🏻 يرجى منكم تبرير الغياب في المرات\n      القادمة قبل الغياب\n      ولكم جزيل الشكر🌷\n\nإدارة المسجد',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['circle'].queryset = Circle.objects.all()
 
 
 class StudentMultipleChoiceField(forms.ModelMultipleChoiceField):

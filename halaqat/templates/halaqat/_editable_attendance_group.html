@@ -23,6 +23,9 @@
         <input type="radio" name="abs_status_{{ row.student.id }}" id="abs_present_{{ row.student.id }}" value="present" {% if row.status == 'present' %}checked{% endif %}>
         <label for="abs_present_{{ row.student.id }}" class="present">حاضر</label>
 
+        <input type="radio" name="abs_status_{{ row.student.id }}" id="abs_late_{{ row.student.id }}" value="late" {% if row.status == 'late' %}checked{% endif %}>
+        <label for="abs_late_{{ row.student.id }}" class="late">تأخر</label>
+
         <input type="radio" name="abs_status_{{ row.student.id }}" id="abs_excused_{{ row.student.id }}" value="excused" {% if row.status == 'excused' %}checked{% endif %}>
         <label for="abs_excused_{{ row.student.id }}" class="excused">إذن</label>
 

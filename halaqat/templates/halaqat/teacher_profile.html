@@ -1,0 +1,57 @@
+{% extends "halaqat/base.html" %}
+{% block title %}{{ teacher.name }} - جرد الأستاذ{% endblock %}
+{% block content %}
+
+<a href="{% url 'teachers_list' %}" class="back-link">→ رجوع لصفحة الأساتذة</a>
+
+<div class="page-header">
+  <h2>👨‍🏫 {{ teacher.name }}</h2>
+  <div class="desc">
+    {% if teacher.phone %}الهاتف: {{ teacher.phone }} · {% endif %}
+    {% if circles %}يُدرّس حلقة: {% for c in circles %}{{ c.name }}{% if not forloop.last %}، {% endif %}{% endfor %}{% endif %}
+    {% if courses %}{% if circles %} · {% endif %}دورات: {% for c in courses %}{{ c.name }}{% if not forloop.last %}، {% endif %}{% endfor %}{% endif %}
+    {% if not circles and not courses %}غير مرتبط بأي حلقة أو دورة حالياً{% endif %}
+  </div>
+</div>
+
+<div class="summary-bar">
+  <div class="summary-chip present"><div class="n">{{ stats.present }}</div><div class="l">حاضر</div></div>
+  <div class="summary-chip late"><div class="n">{{ stats.late }}</div><div class="l">تأخر</div></div>
+  <div class="summary-chip absent"><div class="n">{{ stats.absent }}</div><div class="l">غائب</div></div>
+  <div class="summary-chip excused"><div class="n">{{ stats.excused }}</div><div class="l">إذن</div></div>
+</div>
+
+<div class="panel">
+  <h3>📋 سجل الحضور التفصيلي (من كل المصادر) — {{ stats.total }} سجل</h3>
+  {% if page_obj %}
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead><tr><th>التاريخ</th><th>المصدر</th><th>الحالة</th></tr></thead>
+      <tbody>
+        {% for record in page_obj %}
+        <tr>
+          <td>{{ record.date|date:"Y-m-d" }}</td>
+          <td>{{ record.source }}</td>
+          <td>
+            <span class="badge {% if record.status == 'present' %}good{% elif record.status == 'late' %}badge-late{% elif record.status == 'absent' %}bad{% else %}mid{% endif %}">
+              {{ record.status_display }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.has_other_pages %}
+  <div class="pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">◀ السابق</a>{% endif %}
+    <span>صفحة {{ page_obj.number }} من {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">التالي ▶</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p style="font-size:13px; color:#9c8a71;">لا يوجد سجل حضور بعد.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

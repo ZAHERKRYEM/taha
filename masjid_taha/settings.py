@@ -1,6 +1,7 @@
 """
 إعدادات مشروع نظام إدارة حلقات مسجد طه
 """
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -87,3 +88,22 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'circles_list'
 LOGOUT_REDIRECT_URL = 'login'
+
+# ---- إعدادات بوت تلغرام (نسخ احتياطي يومي + سجل عمليات لوحة التحكم) ----
+# القيم الفعلية (التوكن الحقيقي) موجودة في ملف telegram_secrets.py المحلي
+# وهو مستثنى من git عمداً حماية للسر. إن لم يكن موجوداً، تُقرأ القيم من
+# متغيرات البيئة كخطة بديلة.
+try:
+    from .telegram_secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+except ImportError:
+    TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+# فعّل/عطّل إرسال سجل عمليات لوحة التحكم (حذف/تعديل) لتلغرام
+TELEGRAM_LOG_ADMIN_ACTIONS = True
+
+# ---- إعدادات واتساب WAHA ----
+# القيم الفعلية موجودة في ملف whatsapp_secrets.py المحلي أو متغيرات البيئة.
+
+WAHA_RENDER_URL ="https://taha-wa.onrender.com"
+WAHA_API_KEY ="12345678"

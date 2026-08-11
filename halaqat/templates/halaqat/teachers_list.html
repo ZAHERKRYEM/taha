@@ -1,0 +1,85 @@
+{% extends "halaqat/base.html" %}
+{% load static %}
+{% block title %}الأساتذة - مسجد طه{% endblock %}
+{% block content %}
+
+<div id="save-toast" class="save-toast">تم الحفظ ✓</div>
+{% csrf_token %}
+
+<div class="page-header">
+  <h2>الأساتذة</h2>
+  <div class="desc">كل الأساتذة، سواء المرتبطون بحلقة/دورة أو غير المرتبطين — لتسجيل تفقد من لم يُؤخذ له حضور اليوم</div>
+</div>
+
+<div class="circle-detail-head">
+  <form method="get" class="date-form" style="margin-top:0;">
+    <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+    <button type="submit">عرض</button>
+  </form>
+</div>
+
+<div class="stats-row">
+  <div class="stat-card"><div class="num">{{ total_teachers }}</div><div class="lbl">عدد الأساتذة</div></div>
+  <div class="stat-card"><div class="num">{{ unrecorded_count }}</div><div class="lbl">لم يُسجَّل لهم شيء اليوم</div></div>
+</div>
+
+<p class="autosave-hint">💡 الحالة هنا تُسجَّل كـ"تفقد عام" مستقل، وتُحفظ فوراً بالضغط. إن كان للأستاذ سجل ضمن حلقة أو دورة اليوم ستراه أسفل اسمه.</p>
+
+{% if rows %}
+<div class="student-table" style="margin-top:14px;">
+  {% for row in rows %}
+  <div class="student-row {% if not row.has_any_record %}unrecorded-row{% endif %}"
+       data-kind="teacher_general"
+       data-entity-id="{{ row.teacher.id }}"
+       data-save-url="{% url 'save_teacher_attendance_general' %}"
+       data-date="{{ selected_date|date:'Y-m-d' }}">
+    <div class="student-name">
+      <div class="avatar teacher-avatar">👨‍🏫</div>
+      <div>
+        <a href="{% url 'teacher_profile' row.teacher.id %}" style="color:var(--ink); font-weight:700;">{{ row.teacher.name }}</a>
+        {% if row.is_linked %}
+          <div class="absence-stats">
+            {% for c in row.circles %}<span>حلقة: {{ c.name }}</span>{% endfor %}
+            {% for c in row.courses %}<span>دورة: {{ c.name }}</span>{% endfor %}
+          </div>
+        {% else %}
+          <div class="absence-stats"><span style="background:var(--error-bg); color:var(--error);">غير مرتبط بأي حلقة أو دورة</span></div>
+        {% endif %}
+        {% if row.context_notes %}
+          <div class="absence-stats">
+            {% for note in row.context_notes %}<span>{{ note }}</span>{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="tristate">
+      <input type="radio" name="gt_status_{{ row.teacher.id }}" id="gt_present_{{ row.teacher.id }}" value="present" {% if row.general_status == 'present' %}checked{% endif %}>
+      <label for="gt_present_{{ row.teacher.id }}" class="present">حاضر</label>
+
+      <input type="radio" name="gt_status_{{ row.teacher.id }}" id="gt_late_{{ row.teacher.id }}" value="late" {% if row.general_status == 'late' %}checked{% endif %}>
+      <label for="gt_late_{{ row.teacher.id }}" class="late">تأخر</label>
+
+      <input type="radio" name="gt_status_{{ row.teacher.id }}" id="gt_excused_{{ row.teacher.id }}" value="excused" {% if row.general_status == 'excused' %}checked{% endif %}>
+      <label for="gt_excused_{{ row.teacher.id }}" class="excused">إذن</label>
+
+      <input type="radio" name="gt_status_{{ row.teacher.id }}" id="gt_absent_{{ row.teacher.id }}" value="absent" {% if row.general_status == 'absent' %}checked{% endif %}>
+      <label for="gt_absent_{{ row.teacher.id }}" class="absent">غائب</label>
+    </div>
+    {% if not row.is_linked %}
+    <form method="post" action="{% url 'delete_teacher' row.teacher.id %}"
+          onsubmit="return confirm('سيتم حذف الأستاذ «{{ row.teacher.name }}» نهائياً. هل أنت متأكد؟');" style="margin-top:8px;">
+      {% csrf_token %}
+      <button type="submit" class="delete-link">🗑 حذف الأستاذ</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state" style="margin-top:14px;">
+  لا يوجد أساتذة مسجّلون بعد.
+</div>
+{% endif %}
+
+<script src="{% static 'halaqat/js/attendance.js' %}?v=4"></script>
+{% endblock %}

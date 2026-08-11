@@ -10,7 +10,7 @@
 </div>
 
 <div class="panel" style="max-width:480px;">
-  <form method="post">
+  <form method="post" onsubmit="return confirm('سيتم حفظ هذه التعديلات على الحلقة. هل أنت متأكد؟');">
     {% csrf_token %}
     <div class="field">
       <label for="{{ form.name.id_for_label }}">اسم الحلقة</label>

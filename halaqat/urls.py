@@ -24,4 +24,11 @@ urlpatterns = [
     path('courses/<int:pk>/edit/', views.edit_course, name='edit_course'),
     path('courses/<int:pk>/delete/', views.delete_course, name='delete_course'),
     path('export/course-attendance/', views.export_course_attendance_csv, name='export_course_attendance_csv'),
+
+    path('teachers/', views.teachers_list, name='teachers_list'),
+    path('teachers/attendance/save/', views.save_teacher_attendance_general, name='save_teacher_attendance_general'),
+    path('teachers/<int:pk>/delete/', views.delete_teacher, name='delete_teacher'),
+
+    path('students/<int:student_id>/profile/', views.student_profile, name='student_profile'),
+    path('teachers/<int:teacher_id>/profile/', views.teacher_profile, name='teacher_profile'),
 ]

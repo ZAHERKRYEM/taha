@@ -19,9 +19,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function updateCounts(counts) {
     const p = document.getElementById('cnt-present');
+    const l = document.getElementById('cnt-late');
     const a = document.getElementById('cnt-absent');
     const e = document.getElementById('cnt-excused');
     if (p) p.textContent = counts.present;
+    if (l && counts.late !== undefined) l.textContent = counts.late;
     if (a) a.textContent = counts.absent;
     if (e) e.textContent = counts.excused;
   }
@@ -58,6 +60,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (data.ok) {
           if (data.counts) updateCounts(data.counts);
           showToast(true);
+          row.classList.remove('unrecorded-row');
 
           // في صفحة الغائبين: إن تغيّرت حالة طالب من "غائب/إذن" لحالة أخرى، أخفِ صفه تلقائياً
           if (row.classList.contains('resolvable-row')) {

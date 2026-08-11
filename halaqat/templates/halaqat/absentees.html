@@ -26,6 +26,7 @@
 
 <div class="summary-bar">
   <div class="summary-chip absent"><div class="n">{{ total_absent }}</div><div class="l">غائب اليوم</div></div>
+  <div class="summary-chip late"><div class="n">{{ total_late }}</div><div class="l">تأخر اليوم</div></div>
   <div class="summary-chip excused"><div class="n">{{ total_excused }}</div><div class="l">إذن اليوم</div></div>
 </div>
 
@@ -33,7 +34,7 @@
   📤 تصدير حضور هذا اليوم (CSV)
 </a>
 
-<p class="autosave-hint" style="margin-top:14px;">💡 تغيير الحالة هنا يُحفظ تلقائياً، وسيختفي الطالب من هذه القائمة إن لم يعد "غائب".</p>
+<p class="autosave-hint" style="margin-top:14px;">💡 تغيير الحالة هنا يُحفظ تلقائياً، وسيختفي الطالب من هذه القائمة إن لم يعد بنفس الحالة الأصلية.</p>
 
 <h3 style="margin-top:20px; color:var(--primary-deep); font-size:15px;">🚫 الغائبون</h3>
 {% if grouped_absentees %}
@@ -43,6 +44,17 @@
 {% else %}
 <div class="empty-state" style="margin-top:12px;">
   لا يوجد طلاب مسجَّلون "غائب" في هذا التاريخ 🎉
+</div>
+{% endif %}
+
+<h3 style="margin-top:28px; color:var(--late); font-size:15px;">🟠 المتأخرون</h3>
+{% if grouped_late %}
+  {% for group in grouped_late %}
+    {% include "halaqat/_editable_attendance_group.html" with group=group selected_date=selected_date count_label="تأخر" %}
+  {% endfor %}
+{% else %}
+<div class="empty-state" style="margin-top:12px;">
+  لا يوجد طلاب مسجَّلون "تأخر" في هذا التاريخ
 </div>
 {% endif %}
 
@@ -57,5 +69,5 @@
 </div>
 {% endif %}
 
-<script src="{% static 'halaqat/js/attendance.js' %}?v=3"></script>
+<script src="{% static 'halaqat/js/attendance.js' %}?v=4"></script>
 {% endblock %}

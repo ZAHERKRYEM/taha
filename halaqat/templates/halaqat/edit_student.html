@@ -10,7 +10,7 @@
 </div>
 
 <div class="panel" style="max-width:480px;">
-  <form method="post">
+  <form method="post" onsubmit="return confirm('سيتم حفظ هذه التعديلات على بيانات الطالب. هل أنت متأكد؟');">
     {% csrf_token %}
     <div class="field">
       <label for="{{ form.name.id_for_label }}">اسم الطالب</label>
@@ -19,6 +19,10 @@
     <div class="field">
       <label for="{{ form.circle.id_for_label }}">الحلقة</label>
       {{ form.circle }}
+    </div>
+    <div class="field">
+      <label for="{{ form.phone.id_for_label }}">رقم الهاتف (اختياري)</label>
+      {{ form.phone }}
     </div>
     <div class="field">
       <label for="{{ form.notes.id_for_label }}">ملاحظات (اختياري)</label>

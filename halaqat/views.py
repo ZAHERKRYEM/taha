@@ -2,8 +2,10 @@ import csv
 import datetime
 import io
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
@@ -11,9 +13,11 @@ from django.views.decorators.http import require_POST
 
 from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
-    Course, CourseAttendance, CourseTeacherAttendance,
+    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance,
 )
-from .forms import CircleForm, StudentForm, CourseForm
+from .forms import CircleForm, StudentForm, CourseForm, WhatsAppAbsentForm
+from .telegram_utils import send_telegram_message
+from .whatsapp_utils import normalize_chat_id, send_whatsapp_text
 
 
 @login_required
@@ -25,7 +29,7 @@ def circles_list(request):
     for circle in circles:
         total_students = circle.student_count
         today_records = Attendance.objects.filter(circle=circle, date=today)
-        present_today = today_records.filter(status='present').count()
+        present_today = today_records.filter(status__in=['present', 'late']).count()
         rate = None
         if today_records.exists():
             counted = today_records.exclude(status='excused').count()
@@ -87,6 +91,7 @@ def circle_detail(request, circle_id):
         })
 
     present_count = sum(1 for s in student_rows if s['status'] == 'present')
+    late_count = sum(1 for s in student_rows if s['status'] == 'late')
     absent_count = sum(1 for s in student_rows if s['status'] == 'absent')
     excused_count = sum(1 for s in student_rows if s['status'] == 'excused')
 
@@ -109,6 +114,7 @@ def circle_detail(request, circle_id):
         'student_rows': student_rows,
         'selected_date': selected_date,
         'present_count': present_count,
+        'late_count': late_count,
         'absent_count': absent_count,
         'excused_count': excused_count,
         'attendance_rate_30d': circle.attendance_rate(30),
@@ -156,6 +162,7 @@ def save_attendance(request, circle_id):
     records = Attendance.objects.filter(circle=circle, date=selected_date)
     counts = {
         'present': records.filter(status='present').count(),
+        'late': records.filter(status='late').count(),
         'absent': records.filter(status='absent').count(),
         'excused': records.filter(status='excused').count(),
     }
@@ -175,7 +182,7 @@ def courses_list(request):
     for course in courses:
         total_students = course.student_count
         today_records = CourseAttendance.objects.filter(course=course, date=today)
-        present_today = today_records.filter(status='present').count()
+        present_today = today_records.filter(status__in=['present', 'late']).count()
         rate = None
         if today_records.exists():
             counted = today_records.exclude(status='excused').count()
@@ -232,6 +239,7 @@ def course_detail(request, course_id):
         })
 
     present_count = sum(1 for s in student_rows if s['status'] == 'present')
+    late_count = sum(1 for s in student_rows if s['status'] == 'late')
     absent_count = sum(1 for s in student_rows if s['status'] == 'absent')
     excused_count = sum(1 for s in student_rows if s['status'] == 'excused')
 
@@ -253,6 +261,7 @@ def course_detail(request, course_id):
         'student_rows': student_rows,
         'selected_date': selected_date,
         'present_count': present_count,
+        'late_count': late_count,
         'absent_count': absent_count,
         'excused_count': excused_count,
         'attendance_rate_30d': course.attendance_rate(30),
@@ -302,6 +311,7 @@ def save_course_attendance(request, course_id):
     records = CourseAttendance.objects.filter(course=course, date=selected_date)
     counts = {
         'present': records.filter(status='present').count(),
+        'late': records.filter(status='late').count(),
         'absent': records.filter(status='absent').count(),
         'excused': records.filter(status='excused').count(),
     }
@@ -316,6 +326,7 @@ def edit_course(request, pk):
         if form.is_valid():
             form.save()
             messages.success(request, 'تم تحديث بيانات الدورة بنجاح.')
+            _log_admin_action(request, f'✏️ تعديل دورة/درس: {course.name}')
             return redirect('admin_panel')
     else:
         form = CourseForm(instance=course)
@@ -335,7 +346,123 @@ def delete_course(request, pk):
     name = course.name
     course.delete()
     messages.success(request, f'تم حذف "{name}" وجميع سجلات حضورها.')
+    _log_admin_action(request, f'🗑 حذف دورة/درس: {name}')
     return redirect('admin_panel')
+
+
+# ============================================================
+#  صفحة الأساتذة (المرتبطون بحلقة/دورة وغير المرتبطين) وتفقدهم العام
+# ============================================================
+
+@login_required
+def teachers_list(request):
+    """تعرض كل الأساتذة (مرتبطين وغير مرتبطين)، مع إمكانية تسجيل تفقد عام لمن لم يُؤخذ له حضور اليوم."""
+    selected_date = _parse_date_param(request)
+    teachers = Teacher.objects.prefetch_related('circles', 'courses').order_by('name')
+
+    rows = []
+    for teacher in teachers:
+        circle_record = TeacherAttendance.objects.filter(teacher=teacher, date=selected_date).select_related('circle').first()
+        course_record = CourseTeacherAttendance.objects.filter(teacher=teacher, date=selected_date).select_related('course').first()
+        general_record = TeacherDailyAttendance.objects.filter(teacher=teacher, date=selected_date).first()
+
+        context_notes = []
+        if circle_record:
+            context_notes.append(f'حلقة {circle_record.circle.name}: {circle_record.get_status_display()}')
+        if course_record:
+            context_notes.append(f'دورة {course_record.course.name}: {course_record.get_status_display()}')
+
+        # نُعطي أولوية لعرض حالة الحضور المرتبطة بحلقة/دورة إن وُجدت.
+        # هذا يمنع اختلاف النص في سياق الحلقة وبين أزرار التفقد العام.
+        if circle_record:
+            effective_status = circle_record.status
+        elif course_record:
+            effective_status = course_record.status
+        elif general_record:
+            effective_status = general_record.status
+        else:
+            effective_status = ''
+
+        rows.append({
+            'teacher': teacher,
+            'circles': teacher.circles.all(),
+            'courses': teacher.courses.all(),
+            'is_linked': teacher.circles.exists() or teacher.courses.exists(),
+            'general_status': effective_status,
+            'context_notes': context_notes,
+            'has_any_record': bool(circle_record or course_record or general_record),
+        })
+
+    # غير المرتبطين أولاً لتسهيل تفقدهم بسرعة، ثم البقية
+    rows.sort(key=lambda r: r['is_linked'])
+
+    context = {
+        'rows': rows,
+        'selected_date': selected_date,
+        'total_teachers': teachers.count(),
+        'unrecorded_count': sum(1 for r in rows if not r['has_any_record']),
+        'active_nav': 'teachers',
+    }
+    return render(request, 'halaqat/teachers_list.html', context)
+
+
+@login_required
+@require_POST
+def save_teacher_attendance_general(request):
+    """حفظ فوري لتفقد عام لأستاذ عبر AJAX.
+
+    إن كان الأستاذ مرتبطاً بحلقة أو دورة، نحفظ الحالة في سجلات الحضور المرتبطة بها
+    لتُزامَن مع صفحات الحلقة/الدورة. وإلا نحفظ تفقداً عاماً فقط.
+    """
+    entity_id = request.POST.get('entity_id')
+    status = request.POST.get('status')
+    date_str = request.POST.get('date')
+
+    if status not in dict(Attendance.STATUS_CHOICES):
+        return JsonResponse({'ok': False, 'error': 'حالة غير صالحة'}, status=400)
+
+    try:
+        selected_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'ok': False, 'error': 'تاريخ غير صالح'}, status=400)
+
+    teacher = get_object_or_404(Teacher, pk=entity_id)
+    linked_circles = teacher.circles.all()
+    linked_courses = teacher.courses.all()
+
+    if linked_circles.exists() or linked_courses.exists():
+        for circle in linked_circles:
+            TeacherAttendance.objects.update_or_create(
+                teacher=teacher, circle=circle, date=selected_date,
+                defaults={'status': status},
+            )
+        for course in linked_courses:
+            CourseTeacherAttendance.objects.update_or_create(
+                teacher=teacher, course=course, date=selected_date,
+                defaults={'status': status},
+            )
+    else:
+        TeacherDailyAttendance.objects.update_or_create(
+            teacher=teacher, date=selected_date,
+            defaults={'status': status},
+        )
+
+    return JsonResponse({'ok': True})
+
+
+@login_required
+@require_POST
+def delete_teacher(request, pk):
+    """حذف أستاذ (متاح فقط إن لم يكن مرتبطاً بأي حلقة أو دورة حالياً، لتفادي فقدان البيانات بالخطأ)."""
+    teacher = get_object_or_404(Teacher, pk=pk)
+    if teacher.circles.exists() or teacher.courses.exists():
+        messages.error(request, f'لا يمكن حذف «{teacher.name}» لأنه مرتبط بحلقة أو دورة. عدّل الحلقة/الدورة أولاً.')
+    else:
+        name = teacher.name
+        teacher.delete()
+        messages.success(request, f'تم حذف الأستاذ «{name}».')
+        _log_admin_action(request, f'🗑 حذف أستاذ: {name}')
+    return redirect('teachers_list')
 
 
 @login_required
@@ -343,6 +470,7 @@ def admin_panel(request):
     circle_form = CircleForm()
     student_form = StudentForm()
     course_form = CourseForm()
+    whatsapp_form = WhatsAppAbsentForm()
 
     if request.method == 'POST':
         if 'submit_circle' in request.POST:
@@ -363,11 +491,59 @@ def admin_panel(request):
                 course_form.save()
                 messages.success(request, 'تمت إضافة الدورة/الدرس بنجاح.')
                 return redirect('admin_panel')
+        elif 'submit_whatsapp_absent' in request.POST:
+            whatsapp_form = WhatsAppAbsentForm(request.POST)
+            if whatsapp_form.is_valid():
+                selected_date = whatsapp_form.cleaned_data['date']
+                circle = whatsapp_form.cleaned_data['circle']
+                message_template = whatsapp_form.cleaned_data['message']
+
+                absent_records = Attendance.objects.filter(date=selected_date, status='absent')
+                if circle:
+                    absent_records = absent_records.filter(circle=circle)
+                absent_records = absent_records.select_related('student', 'circle')
+
+                sent = 0
+                failed = 0
+                skipped = 0
+                for record in absent_records:
+                    student = record.student
+                    phone = (student.phone or '').strip()
+                    if not phone:
+                        skipped += 1
+                        continue
+
+                    chat_id = normalize_chat_id(phone)
+                    if not chat_id:
+                        skipped += 1
+                        continue
+
+                    text = message_template.format(
+                        student_name=student.name,
+                        circle_name=record.circle.name,
+                        date=selected_date.strftime('%Y-%m-%d'),
+                        week_absences=student.absence_count(7, selected_date),
+                        month_absences=student.absence_count(30, selected_date),
+                    )
+                    ok = send_whatsapp_text(chat_id, text)
+                    if ok:
+                        sent += 1
+                    else:
+                        failed += 1
+
+                message_parts = [f'تم إرسال الرسالة إلى {sent} طالباً غائباً.']
+                if skipped:
+                    message_parts.append(f'تجاوزنا {skipped} طالباً لعدم وجود رقم هاتف صالح.')
+                if failed:
+                    message_parts.append(f'فشل الإرسال لـ {failed} حالة.')
+                messages.success(request, ' '.join(message_parts))
+                return redirect('admin_panel')
 
     context = {
         'circle_form': circle_form,
         'student_form': student_form,
         'course_form': course_form,
+        'whatsapp_form': whatsapp_form,
         'circles': Circle.objects.select_related('teacher').all(),
         'students': Student.objects.select_related('circle').all(),
         'courses': Course.objects.select_related('teacher').prefetch_related('students').all(),
@@ -384,6 +560,7 @@ def edit_circle(request, pk):
         if form.is_valid():
             form.save()
             messages.success(request, 'تم تحديث بيانات الحلقة بنجاح.')
+            _log_admin_action(request, f'✏️ تعديل حلقة: {circle.name}')
             return redirect('admin_panel')
     else:
         form = CircleForm(instance=circle)
@@ -404,6 +581,7 @@ def edit_student(request, pk):
         if form.is_valid():
             form.save()
             messages.success(request, 'تم تحديث بيانات الطالب بنجاح.')
+            _log_admin_action(request, f'✏️ تعديل طالب: {student.name}')
             return redirect('admin_panel')
     else:
         form = StudentForm(instance=student)
@@ -423,6 +601,7 @@ def delete_circle(request, pk):
     name = circle.name
     circle.delete()  # يحذف تلقائياً طلاب الحلقة وسجلات حضورهم (CASCADE)
     messages.success(request, f'تم حذف حلقة "{name}" وجميع بياناتها المرتبطة بها.')
+    _log_admin_action(request, f'🗑 حذف حلقة: {name} (وكل طلابها وسجلات حضورهم)')
     return redirect('admin_panel')
 
 
@@ -433,6 +612,7 @@ def delete_student(request, pk):
     name = student.name
     student.delete()  # يحذف تلقائياً سجلات حضوره (CASCADE)
     messages.success(request, f'تم حذف الطالب "{name}".')
+    _log_admin_action(request, f'🗑 حذف طالب: {name}')
     return redirect('admin_panel')
 
 
@@ -444,6 +624,15 @@ def _parse_date_param(request, param='date'):
         except ValueError:
             pass
     return timezone.now().date()
+
+
+def _log_admin_action(request, text):
+    """يرسل سجل عملية (حذف/تعديل) من لوحة التحكم إلى بوت التلغرام، إن كان مفعّلاً."""
+    if not getattr(settings, 'TELEGRAM_LOG_ADMIN_ACTIONS', False):
+        return
+    who = request.user.get_username() if request.user.is_authenticated else 'غير معروف'
+    when = timezone.now().strftime('%Y-%m-%d %H:%M')
+    send_telegram_message(f'{text}\nبواسطة: {who}\nالوقت: {when}')
 
 
 @login_required
@@ -478,13 +667,16 @@ def absentees_list(request):
 
     grouped_absentees, total_absent = build_groups('absent')
     grouped_excused, total_excused = build_groups('excused')
+    grouped_late, total_late = build_groups('late')
 
     context = {
         'selected_date': selected_date,
         'grouped_absentees': grouped_absentees,
         'grouped_excused': grouped_excused,
+        'grouped_late': grouped_late,
         'total_absent': total_absent,
         'total_excused': total_excused,
+        'total_late': total_late,
         'circles': Circle.objects.all(),
         'selected_circle_id': int(circle_id) if circle_id else None,
         'active_nav': 'absentees',
@@ -513,6 +705,81 @@ def search_students(request):
             for s in students
         ]
     return JsonResponse({'results': results})
+
+
+# ============================================================
+#  جرد معلومات الطالب / الأستاذ (بيانات + سجل حضور تفصيلي)
+# ============================================================
+
+@login_required
+def student_profile(request, student_id):
+    student = get_object_or_404(Student.objects.select_related('circle', 'circle__teacher'), pk=student_id)
+
+    circle_records = Attendance.objects.filter(student=student).order_by('-date')
+    course_records = CourseAttendance.objects.filter(student=student).select_related('course').order_by('-date')
+
+    stats = {
+        'present': circle_records.filter(status='present').count(),
+        'late': circle_records.filter(status='late').count(),
+        'excused': circle_records.filter(status='excused').count(),
+        'absent': circle_records.filter(status='absent').count(),
+        'total': circle_records.count(),
+    }
+
+    paginator = Paginator(circle_records, 30)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    context = {
+        'student': student,
+        'stats': stats,
+        'rate_30': student.attendance_rate(30),
+        'rate_90': student.attendance_rate(90),
+        'page_obj': page_obj,
+        'course_records': course_records,
+        'courses': student.courses.all(),
+        'active_nav': None,
+    }
+    return render(request, 'halaqat/student_profile.html', context)
+
+
+@login_required
+def teacher_profile(request, teacher_id):
+    teacher = get_object_or_404(Teacher, pk=teacher_id)
+
+    circle_records = list(TeacherAttendance.objects.filter(teacher=teacher).select_related('circle'))
+    course_records = list(CourseTeacherAttendance.objects.filter(teacher=teacher).select_related('course'))
+    general_records = list(TeacherDailyAttendance.objects.filter(teacher=teacher))
+
+    combined = []
+    for r in circle_records:
+        combined.append({'date': r.date, 'status': r.status, 'status_display': r.get_status_display(), 'source': f'حلقة {r.circle.name}'})
+    for r in course_records:
+        combined.append({'date': r.date, 'status': r.status, 'status_display': r.get_status_display(), 'source': f'دورة {r.course.name}'})
+    for r in general_records:
+        combined.append({'date': r.date, 'status': r.status, 'status_display': r.get_status_display(), 'source': 'تفقد عام'})
+
+    combined.sort(key=lambda r: r['date'], reverse=True)
+
+    stats = {
+        'present': sum(1 for r in combined if r['status'] == 'present'),
+        'late': sum(1 for r in combined if r['status'] == 'late'),
+        'excused': sum(1 for r in combined if r['status'] == 'excused'),
+        'absent': sum(1 for r in combined if r['status'] == 'absent'),
+        'total': len(combined),
+    }
+
+    paginator = Paginator(combined, 30)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    context = {
+        'teacher': teacher,
+        'stats': stats,
+        'page_obj': page_obj,
+        'circles': teacher.circles.all(),
+        'courses': teacher.courses.all(),
+        'active_nav': None,
+    }
+    return render(request, 'halaqat/teacher_profile.html', context)
 
 
 @login_required

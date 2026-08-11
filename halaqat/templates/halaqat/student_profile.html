@@ -1,0 +1,91 @@
+{% extends "halaqat/base.html" %}
+{% block title %}{{ student.name }} - جرد الطالب{% endblock %}
+{% block content %}
+
+<a href="{% url 'circle_detail' student.circle.id %}" class="back-link">→ رجوع لحلقة {{ student.circle.name }}</a>
+
+<div class="page-header">
+  <h2>👤 {{ student.name }}</h2>
+  <div class="desc">
+    الحلقة: {{ student.circle.name }}
+    {% if student.circle.teacher %} · الأستاذ: {{ student.circle.teacher.name }}{% endif %}
+    {% if student.phone %} · هاتف: {{ student.phone }}{% endif %}
+    · منضم منذ {{ student.joined_at|date:"Y-m-d" }}
+    {% if student.notes %} · ملاحظات: {{ student.notes }}{% endif %}
+  </div>
+</div>
+
+<div class="stats-row" style="grid-template-columns: repeat(2,1fr);">
+  <div class="stat-card"><div class="num">{% if rate_30 is not None %}{{ rate_30 }}%{% else %}—{% endif %}</div><div class="lbl">نسبة الحضور (30 يوم)</div></div>
+  <div class="stat-card"><div class="num">{% if rate_90 is not None %}{{ rate_90 }}%{% else %}—{% endif %}</div><div class="lbl">نسبة الحضور (90 يوم)</div></div>
+</div>
+
+<div class="summary-bar">
+  <div class="summary-chip present"><div class="n">{{ stats.present }}</div><div class="l">حاضر</div></div>
+  <div class="summary-chip late"><div class="n">{{ stats.late }}</div><div class="l">تأخر</div></div>
+  <div class="summary-chip absent"><div class="n">{{ stats.absent }}</div><div class="l">غائب</div></div>
+  <div class="summary-chip excused"><div class="n">{{ stats.excused }}</div><div class="l">إذن</div></div>
+</div>
+
+{% if courses %}
+<div class="panel" style="margin-bottom:16px;">
+  <h3>🎓 مشارك في</h3>
+  <div class="absence-stats" style="flex-wrap:wrap;">
+    {% for c in courses %}<span>{{ c.name }}</span>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>📋 سجل الحضور التفصيلي (الحلقة الأساسية) — {{ stats.total }} سجل</h3>
+  {% if page_obj %}
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead><tr><th>التاريخ</th><th>الحالة</th></tr></thead>
+      <tbody>
+        {% for record in page_obj %}
+        <tr>
+          <td>{{ record.date|date:"Y-m-d" }}</td>
+          <td>
+            <span class="badge {% if record.status == 'present' %}good{% elif record.status == 'late' %}badge-late{% elif record.status == 'absent' %}bad{% else %}mid{% endif %}">
+              {{ record.get_status_display }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.has_other_pages %}
+  <div class="pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">◀ السابق</a>{% endif %}
+    <span>صفحة {{ page_obj.number }} من {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">التالي ▶</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p style="font-size:13px; color:#9c8a71;">لا يوجد سجل حضور بعد.</p>
+  {% endif %}
+</div>
+
+{% if course_records %}
+<div class="panel" style="margin-top:16px;">
+  <h3>🎓 سجل حضور الدورات الإضافية</h3>
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead><tr><th>الدورة</th><th>التاريخ</th><th>الحالة</th></tr></thead>
+      <tbody>
+        {% for record in course_records %}
+        <tr>
+          <td>{{ record.course.name }}</td>
+          <td>{{ record.date|date:"Y-m-d" }}</td>
+          <td>{{ record.get_status_display }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

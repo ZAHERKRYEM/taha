@@ -16,10 +16,13 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     results.innerHTML = items.map(function (s) {
       return (
+        '<div class="search-result-row">' +
         '<a href="/circles/' + s.circle_id + '/">' +
         '<span class="s-name">' + escapeHtml(s.name) + '</span>' +
         '<span class="s-circle">' + escapeHtml(s.circle_name) + '</span>' +
-        '</a>'
+        '</a>' +
+        '<a class="s-profile" href="/students/' + s.id + '/profile/" title="عرض ملف الطالب">👁</a>' +
+        '</div>'
       );
     }).join('');
     results.classList.add('show');

@@ -46,6 +46,7 @@
 
 <div class="summary-bar">
   <div class="summary-chip present"><div class="n" id="cnt-present">{{ present_count }}</div><div class="l">حاضر</div></div>
+  <div class="summary-chip late"><div class="n" id="cnt-late">{{ late_count }}</div><div class="l">تأخر</div></div>
   <div class="summary-chip absent"><div class="n" id="cnt-absent">{{ absent_count }}</div><div class="l">غائب</div></div>
   <div class="summary-chip excused"><div class="n" id="cnt-excused">{{ excused_count }}</div><div class="l">إذن</div></div>
 </div>
@@ -66,6 +67,9 @@
     <div class="tristate">
       <input type="radio" name="status_teacher_{{ circle.teacher.id }}" id="present_teacher_{{ circle.teacher.id }}" value="present" {% if teacher_status == 'present' %}checked{% endif %}>
       <label for="present_teacher_{{ circle.teacher.id }}" class="present">حاضر</label>
+
+      <input type="radio" name="status_teacher_{{ circle.teacher.id }}" id="late_teacher_{{ circle.teacher.id }}" value="late" {% if teacher_status == 'late' %}checked{% endif %}>
+      <label for="late_teacher_{{ circle.teacher.id }}" class="late">تأخر</label>
 
       <input type="radio" name="status_teacher_{{ circle.teacher.id }}" id="excused_teacher_{{ circle.teacher.id }}" value="excused" {% if teacher_status == 'excused' %}checked{% endif %}>
       <label for="excused_teacher_{{ circle.teacher.id }}" class="excused">إذن</label>
@@ -89,6 +93,9 @@
       <input type="radio" name="status_{{ row.student.id }}" id="present_{{ row.student.id }}" value="present" {% if row.status == 'present' %}checked{% endif %}>
       <label for="present_{{ row.student.id }}" class="present">حاضر</label>
 
+      <input type="radio" name="status_{{ row.student.id }}" id="late_{{ row.student.id }}" value="late" {% if row.status == 'late' %}checked{% endif %}>
+      <label for="late_{{ row.student.id }}" class="late">تأخر</label>
+
       <input type="radio" name="status_{{ row.student.id }}" id="excused_{{ row.student.id }}" value="excused" {% if row.status == 'excused' %}checked{% endif %}>
       <label for="excused_{{ row.student.id }}" class="excused">إذن</label>
 
@@ -104,5 +111,5 @@
 </div>
 {% endif %}
 
-<script src="{% static 'halaqat/js/attendance.js' %}?v=3"></script>
+<script src="{% static 'halaqat/js/attendance.js' %}?v=4"></script>
 {% endblock %}

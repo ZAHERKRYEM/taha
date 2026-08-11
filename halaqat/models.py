@@ -40,13 +40,13 @@ class Circle(models.Model):
         return self.students.count()
 
     def attendance_rate(self, days=30):
-        """نسبة الحضور خلال آخر عدد أيام محدد (احتساب: حاضر / (حاضر+غائب))"""
+        """نسبة الحضور خلال آخر عدد أيام محدد (احتساب: (حاضر+تأخر) / (حاضر+تأخر+غائب))"""
         since = timezone.now().date() - timezone.timedelta(days=days)
         qs = Attendance.objects.filter(circle=self, date__gte=since)
         total = qs.exclude(status='excused').count()
         if total == 0:
             return None
-        present = qs.filter(status='present').count()
+        present = qs.filter(status__in=['present', 'late']).count()
         return round((present / total) * 100)
 
     def attendance_progress(self, date):
@@ -63,6 +63,7 @@ class Circle(models.Model):
 class Student(models.Model):
     """طالب داخل حلقة"""
     name = models.CharField('اسم الطالب', max_length=150)
+    phone = models.CharField('رقم الهاتف', max_length=20, blank=True)
     circle = models.ForeignKey(
         Circle, verbose_name='الحلقة',
         on_delete=models.CASCADE, related_name='students',
@@ -84,7 +85,7 @@ class Student(models.Model):
         total = qs.exclude(status='excused').count()
         if total == 0:
             return None
-        present = qs.filter(status='present').count()
+        present = qs.filter(status__in=['present', 'late']).count()
         return round((present / total) * 100)
 
     def absence_count(self, days, before_date=None):
@@ -101,8 +102,9 @@ class Attendance(models.Model):
 
     STATUS_CHOICES = [
         ('present', 'حاضر'),
-        ('absent', 'غائب'),
+        ('late', 'تأخر'),
         ('excused', 'إذن'),
+        ('absent', 'غائب'),
     ]
 
     student = models.ForeignKey(
@@ -189,7 +191,7 @@ class Course(models.Model):
         total = qs.exclude(status='excused').count()
         if total == 0:
             return None
-        present = qs.filter(status='present').count()
+        present = qs.filter(status__in=['present', 'late']).count()
         return round((present / total) * 100)
 
     def attendance_progress(self, date):
@@ -255,3 +257,29 @@ class CourseTeacherAttendance(models.Model):
 
     def __str__(self):
         return f'{self.teacher.name} - {self.course.name} - {self.date} - {self.get_status_display()}'
+
+class TeacherDailyAttendance(models.Model):
+    """
+    تفقّد عام يومي للأستاذ، مستقل عن أي حلقة أو دورة محددة.
+    يُستخدم في صفحة "الأساتذة" لتسجيل حضور من لم يُؤخذ له تفقد ضمن حلقة/دورة اليوم
+    (خصوصاً الأساتذة غير المرتبطين بأي حلقة).
+    """
+
+    STATUS_CHOICES = Attendance.STATUS_CHOICES
+
+    teacher = models.ForeignKey(
+        Teacher, verbose_name='الأستاذ',
+        on_delete=models.CASCADE, related_name='general_attendance_records',
+    )
+    date = models.DateField('التاريخ', default=timezone.now)
+    status = models.CharField('الحالة', max_length=10, choices=STATUS_CHOICES, default='present')
+    recorded_at = models.DateTimeField('وقت التسجيل', auto_now=True)
+
+    class Meta:
+        verbose_name = 'تفقد عام لأستاذ'
+        verbose_name_plural = 'التفقد العام للأساتذة'
+        unique_together = [('teacher', 'date')]
+        ordering = ['-date']
+
+    def __str__(self):
+        return f'{self.teacher.name} - {self.date} - {self.get_status_display()}'

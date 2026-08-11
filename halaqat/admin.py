@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
-    Course, CourseAttendance, CourseTeacherAttendance,
+    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance,
 )
 
 
@@ -20,8 +20,8 @@ class CircleAdmin(admin.ModelAdmin):
 
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ('name', 'circle')
-    search_fields = ('name',)
+    list_display = ('name', 'phone', 'circle')
+    search_fields = ('name', 'phone')
     list_filter = ('circle',)
 
 
@@ -56,4 +56,11 @@ class CourseAttendanceAdmin(admin.ModelAdmin):
 class CourseTeacherAttendanceAdmin(admin.ModelAdmin):
     list_display = ('teacher', 'course', 'date', 'status')
     list_filter = ('course', 'status', 'date')
+    date_hierarchy = 'date'
+
+
+@admin.register(TeacherDailyAttendance)
+class TeacherDailyAttendanceAdmin(admin.ModelAdmin):
+    list_display = ('teacher', 'date', 'status')
+    list_filter = ('status', 'date')
     date_hierarchy = 'date'
