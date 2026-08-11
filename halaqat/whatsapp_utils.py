@@ -41,7 +41,7 @@ def send_whatsapp_text(chat_id, text):
         "Content-Type": "application/json",
     }
     payload = {
-        "session": "default",
+        "session": "taha",
         "chatId": chat_id,
         "text": text,
     }

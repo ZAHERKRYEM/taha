@@ -1,6 +1,8 @@
 import csv
 import datetime
 import io
+from random import randint
+import time
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -507,6 +509,7 @@ def admin_panel(request):
                 failed = 0
                 skipped = 0
                 for record in absent_records:
+                    time.sleep(randint(1, 5))
                     student = record.student
                     phone = (student.phone or '').strip()
                     if not phone:
