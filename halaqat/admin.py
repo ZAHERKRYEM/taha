@@ -40,9 +40,13 @@ class TeacherAttendanceAdmin(admin.ModelAdmin):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ('name', 'teacher', 'student_count')
+    list_display = ('name', 'get_teachers', 'student_count')
     search_fields = ('name',)
-    filter_horizontal = ('students',)
+    filter_horizontal = ('teachers', 'students')
+
+    def get_teachers(self, obj):
+        return ', '.join([teacher.name for teacher in obj.teachers.all()])
+    get_teachers.short_description = 'الأساتذة'
 
 
 @admin.register(CourseAttendance)

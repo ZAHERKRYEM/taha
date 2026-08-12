@@ -103,6 +103,12 @@ class CourseForm(forms.ModelForm):
         max_length=150, required=False,
         widget=forms.TextInput(attrs={'placeholder': 'اسم الأستاذ الجديد (اختياري)'})
     )
+    teachers = forms.ModelMultipleChoiceField(
+        queryset=Teacher.objects.order_by('name'),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        label='الأساتذة / المحاضرون المسؤولون',
+    )
     students = StudentMultipleChoiceField(
         queryset=Student.objects.select_related('circle').order_by('circle__name', 'name'),
         widget=forms.CheckboxSelectMultiple,
@@ -112,10 +118,10 @@ class CourseForm(forms.ModelForm):
 
     class Meta:
         model = Course
-        fields = ['name', 'teacher', 'description', 'students']
+        fields = ['name', 'teachers', 'description', 'students']
         labels = {
             'name': 'اسم الدورة / الدرس',
-            'teacher': 'الأستاذ / المحاضر المسؤول',
+            'teachers': 'الأساتذة / المحاضرون المسؤولون',
             'description': 'وصف مختصر',
         }
         widgets = {
@@ -125,12 +131,12 @@ class CourseForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['teacher'].required = False
-        self.fields['teacher'].empty_label = 'اختر أستاذاً موجوداً (اختياري)'
+        self.fields['teachers'].required = False
 
     def save(self, commit=True):
         new_name = self.cleaned_data.get('new_teacher_name')
+        course = super().save(commit=commit)
         if new_name:
             teacher, _ = Teacher.objects.get_or_create(name=new_name.strip())
-            self.instance.teacher = teacher
-        return super().save(commit=commit)
+            course.teachers.add(teacher)
+        return course

@@ -471,6 +471,25 @@ button, input, select, textarea { font-family: inherit; }
   border: 1px solid var(--accent-light); box-shadow: var(--shadow);
 }
 .panel h3 { font-size: 14px; color: var(--primary-deep); margin-bottom: 14px; }
+.panel.collapsible-panel h3 {
+  cursor: pointer;
+}
+.panel.collapsible-panel h3::after {
+  content: '▼';
+  font-size: 12px;
+  color: var(--primary-deep);
+  margin-left: 10px;
+  transition: transform 0.2s ease;
+}
+.panel.collapsible-panel.collapsed h3::after {
+  transform: rotate(-90deg);
+}
+.panel.collapsible-panel .panel-body {
+  transition: all 0.25s ease;
+}
+.panel.collapsible-panel.collapsed .panel-body {
+  display: none !important;
+}
 
 .table-scroll { overflow-x: auto; border-radius: 14px; border: 1px solid var(--accent-light); }
 .admin-table { width: 100%; border-collapse: collapse; background: var(--white); min-width: 420px; }

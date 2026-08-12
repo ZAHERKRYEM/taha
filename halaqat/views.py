@@ -177,7 +177,7 @@ def save_attendance(request, circle_id):
 
 @login_required
 def courses_list(request):
-    courses = Course.objects.select_related('teacher').prefetch_related('students')
+    courses = Course.objects.prefetch_related('teachers', 'students')
     today = timezone.now().date()
 
     course_cards = []
@@ -245,12 +245,15 @@ def course_detail(request, course_id):
     absent_count = sum(1 for s in student_rows if s['status'] == 'absent')
     excused_count = sum(1 for s in student_rows if s['status'] == 'excused')
 
-    teacher_status = ''
-    if course.teacher:
+    teacher_rows = []
+    for teacher in course.teachers.all():
         cta = CourseTeacherAttendance.objects.filter(
-            teacher=course.teacher, course=course, date=selected_date
+            teacher=teacher, course=course, date=selected_date
         ).first()
-        teacher_status = cta.status if cta else ''
+        teacher_rows.append({
+            'teacher': teacher,
+            'status': cta.status if cta else '',
+        })
 
     all_courses = list(Course.objects.order_by('name'))
     ids = [c.id for c in all_courses]
@@ -267,7 +270,7 @@ def course_detail(request, course_id):
         'absent_count': absent_count,
         'excused_count': excused_count,
         'attendance_rate_30d': course.attendance_rate(30),
-        'teacher_status': teacher_status,
+        'teacher_rows': teacher_rows,
         'all_courses': all_courses,
         'prev_course': prev_course,
         'next_course': next_course,
@@ -295,10 +298,11 @@ def save_course_attendance(request, course_id):
         return JsonResponse({'ok': False, 'error': 'تاريخ غير صالح'}, status=400)
 
     if kind == 'teacher':
-        if not course.teacher or str(course.teacher.id) != str(entity_id):
+        teacher = get_object_or_404(Teacher, pk=entity_id)
+        if not course.teachers.filter(pk=teacher.pk).exists():
             return JsonResponse({'ok': False, 'error': 'لا يوجد أستاذ مطابق لهذه الدورة'}, status=400)
         CourseTeacherAttendance.objects.update_or_create(
-            teacher=course.teacher, course=course, date=selected_date,
+            teacher=teacher, course=course, date=selected_date,
             defaults={'status': status},
         )
     else:
@@ -358,45 +362,26 @@ def delete_course(request, pk):
 
 @login_required
 def teachers_list(request):
-    """تعرض كل الأساتذة (مرتبطين وغير مرتبطين)، مع إمكانية تسجيل تفقد عام لمن لم يُؤخذ له حضور اليوم."""
+    """تعرض الأساتذة غير المرتبطين فقط، مع إمكانية تسجيل تفقد عام لمن لم يُؤخذ له حضور اليوم."""
     selected_date = _parse_date_param(request)
-    teachers = Teacher.objects.prefetch_related('circles', 'courses').order_by('name')
+    teachers = (
+        Teacher.objects.prefetch_related('circles', 'courses')
+        .filter(circles__isnull=True, courses__isnull=True)
+        .distinct()
+        .order_by('name')
+    )
 
     rows = []
     for teacher in teachers:
-        circle_record = TeacherAttendance.objects.filter(teacher=teacher, date=selected_date).select_related('circle').first()
-        course_record = CourseTeacherAttendance.objects.filter(teacher=teacher, date=selected_date).select_related('course').first()
         general_record = TeacherDailyAttendance.objects.filter(teacher=teacher, date=selected_date).first()
-
-        context_notes = []
-        if circle_record:
-            context_notes.append(f'حلقة {circle_record.circle.name}: {circle_record.get_status_display()}')
-        if course_record:
-            context_notes.append(f'دورة {course_record.course.name}: {course_record.get_status_display()}')
-
-        # نُعطي أولوية لعرض حالة الحضور المرتبطة بحلقة/دورة إن وُجدت.
-        # هذا يمنع اختلاف النص في سياق الحلقة وبين أزرار التفقد العام.
-        if circle_record:
-            effective_status = circle_record.status
-        elif course_record:
-            effective_status = course_record.status
-        elif general_record:
-            effective_status = general_record.status
-        else:
-            effective_status = ''
+        effective_status = general_record.status if general_record else ''
 
         rows.append({
             'teacher': teacher,
-            'circles': teacher.circles.all(),
-            'courses': teacher.courses.all(),
-            'is_linked': teacher.circles.exists() or teacher.courses.exists(),
             'general_status': effective_status,
-            'context_notes': context_notes,
-            'has_any_record': bool(circle_record or course_record or general_record),
+            'context_notes': [],
+            'has_any_record': bool(general_record),
         })
-
-    # غير المرتبطين أولاً لتسهيل تفقدهم بسرعة، ثم البقية
-    rows.sort(key=lambda r: r['is_linked'])
 
     context = {
         'rows': rows,
@@ -549,7 +534,7 @@ def admin_panel(request):
         'whatsapp_form': whatsapp_form,
         'circles': Circle.objects.select_related('teacher').all(),
         'students': Student.objects.select_related('circle').all(),
-        'courses': Course.objects.select_related('teacher').prefetch_related('students').all(),
+        'courses': Course.objects.prefetch_related('teachers', 'students').all(),
         'active_nav': 'admin',
     }
     return render(request, 'halaqat/admin_panel.html', context)
@@ -840,7 +825,7 @@ def export_course_attendance_csv(request):
     selected_date = _parse_date_param(request)
     course_id = request.GET.get('course')
 
-    courses = Course.objects.select_related('teacher').all()
+    courses = Course.objects.prefetch_related('teachers', 'students').all()
     if course_id:
         courses = courses.filter(pk=course_id)
 
@@ -850,15 +835,16 @@ def export_course_attendance_csv(request):
     writer.writerow(['الدورة/الدرس', 'الأستاذ', 'اسم الطالب', 'التاريخ', 'الحالة'])
 
     for course in courses:
-        if course.teacher:
+        teacher_names = ', '.join([teacher.name for teacher in course.teachers.all()])
+        for teacher in course.teachers.all():
             cta = CourseTeacherAttendance.objects.filter(
-                teacher=course.teacher, course=course, date=selected_date
+                teacher=teacher, course=course, date=selected_date
             ).first()
             teacher_status_display = cta.get_status_display() if cta else 'لم يُسجَّل'
             writer.writerow([
                 course.name,
-                course.teacher.name,
-                f'{course.teacher.name} (الأستاذ)',
+                teacher.name,
+                f'{teacher.name} (الأستاذ)',
                 selected_date.isoformat(),
                 teacher_status_display,
             ])
@@ -871,7 +857,7 @@ def export_course_attendance_csv(request):
             status_display = existing.get(student.id, 'لم يُسجَّل')
             writer.writerow([
                 course.name,
-                course.teacher.name if course.teacher else '',
+                teacher_names,
                 student.name,
                 selected_date.isoformat(),
                 status_display,

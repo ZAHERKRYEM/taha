@@ -159,12 +159,11 @@ class TeacherAttendance(models.Model):
 
 
 class Course(models.Model):
-    """دورة أو درس إضافي لفئة محددة من الطلاب (مستقل عن الحلقات الأساسية)"""
+    """دورة أو درس إضافي لفئة محددة من الطلاب (مستقل عن الحلقات الأساسية). يمكن أن يكون للدورة أكثر من أستاذ."""
     name = models.CharField('اسم الدورة / الدرس', max_length=150)
-    teacher = models.ForeignKey(
-        Teacher, verbose_name='الأستاذ / المحاضر المسؤول',
-        on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='courses',
+    teachers = models.ManyToManyField(
+        Teacher, verbose_name='الأساتذة / المحاضرون المسؤولون',
+        related_name='courses', blank=True,
     )
     description = models.CharField('وصف مختصر', max_length=255, blank=True)
     students = models.ManyToManyField(
@@ -195,13 +194,15 @@ class Course(models.Model):
         return round((present / total) * 100)
 
     def attendance_progress(self, date):
-        """هل تم تسجيل حضور جميع المشاركين (+الأستاذ إن وُجد) في هذا التاريخ؟"""
+        """هل تم تسجيل حضور جميع المشاركين (+الأساتذة إن وُجدوا) في هذا التاريخ؟"""
         total = self.student_count
         recorded = CourseAttendance.objects.filter(course=self, date=date).count()
-        if self.teacher:
-            total += 1
-            if CourseTeacherAttendance.objects.filter(teacher=self.teacher, course=self, date=date).exists():
-                recorded += 1
+        teacher_count = self.teachers.count()
+        total += teacher_count
+        if teacher_count:
+            recorded += CourseTeacherAttendance.objects.filter(
+                course=self, date=date, teacher__in=self.teachers.all()
+            ).count()
         return {'total': total, 'recorded': recorded, 'complete': total > 0 and recorded >= total}
 
 

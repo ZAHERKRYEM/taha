@@ -9,8 +9,9 @@
 
 <div class="admin-grid">
 
-  <div class="panel">
+  <div class="panel collapsible-panel">
     <h3>➕ إضافة حلقة جديدة</h3>
+    <div class="panel-body">
     <form method="post">
       {% csrf_token %}
       <div class="field">
@@ -32,10 +33,12 @@
       {% if circle_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
       <button type="submit" name="submit_circle" class="btn-primary">حفظ الحلقة</button>
     </form>
+    </div>
   </div>
 
-  <div class="panel">
+  <div class="panel collapsible-panel">
     <h3>➕ إضافة طالب</h3>
+    <div class="panel-body">
     <form method="post">
       {% csrf_token %}
       <div class="field">
@@ -57,10 +60,12 @@
       {% if student_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
       <button type="submit" name="submit_student" class="btn-primary">حفظ الطالب</button>
     </form>
+    </div>
   </div>
 
-  <div class="panel">
+  <div class="panel collapsible-panel">
     <h3>📩 إرسال رسالة واتساب للطلاب الغائبين</h3>
+    <div class="panel-body">
     <div class="desc">سيتم إرسال الرسالة فقط للطلاب الغائبين في التاريخ المحدد. احرص على وجود رقم الهاتف لكل طالب.</div>
     <form method="post">
       {% csrf_token %}
@@ -79,12 +84,14 @@
       {% if whatsapp_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
       <button type="submit" name="submit_whatsapp_absent" class="btn-primary">إرسال للغائبين</button>
     </form>
+    </div>
   </div>
 
 </div>
 
-<div class="panel" style="margin-bottom:16px;">
+<div class="panel collapsible-panel" style="margin-bottom:16px;">
   <h3>🎓 إنشاء دورة / درس إضافي جديد</h3>
+  <div class="panel-body">
   <p style="font-size:12px; color:#9c8a71; margin-bottom:14px;">دورة أو درس لفئة محددة من الطلاب (من أي حلقة)، بحضور مستقل عن الحلقة الأساسية</p>
   <form method="post">
     {% csrf_token %}
@@ -93,8 +100,8 @@
       {{ course_form.name }}
     </div>
     <div class="field">
-      <label for="{{ course_form.teacher.id_for_label }}">الأستاذ / المحاضر المسؤول (اختياري)</label>
-      {{ course_form.teacher }}
+      <label for="{{ course_form.teachers.id_for_label }}">الأساتذة / المحاضرون المسؤولون (اختياري)</label>
+      {{ course_form.teachers }}
     </div>
     <div class="field">
       <label for="{{ course_form.new_teacher_name.id_for_label }}">{{ course_form.new_teacher_name.label }}</label>
@@ -115,8 +122,9 @@
   </form>
 </div>
 
-<div class="panel">
+<div class="panel collapsible-panel start-collapsed">
   <h3>📋 الحلقات الحالية</h3>
+  <div class="panel-body">
   {% if circles %}
   <div class="table-scroll">
     <table class="admin-table">
@@ -145,10 +153,12 @@
   {% else %}
   <p style="font-size:13px; color:#9c8a71;">لا توجد حلقات بعد.</p>
   {% endif %}
+  </div>
 </div>
 
-<div class="panel" style="margin-top:16px;">
+<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
   <h3>👥 الطلاب الحاليون</h3>
+  <div class="panel-body">
   {% if students %}
   <div class="table-scroll">
     <table class="admin-table">
@@ -178,21 +188,29 @@
   {% else %}
   <p style="font-size:13px; color:#9c8a71;">لا يوجد طلاب بعد.</p>
   {% endif %}
+  </div>
 </div>
 
-<div class="panel" style="margin-top:16px;">
+<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
   <h3>🎓 الدورات والدروس الإضافية الحالية</h3>
+  <div class="panel-body">
   {% if courses %}
   <div class="table-scroll">
     <table class="admin-table">
       <thead>
-        <tr><th>الاسم</th><th>الأستاذ</th><th>عدد المشاركين</th><th colspan="2"></th></tr>
+        <tr><th>الاسم</th><th>الأساتذة</th><th>عدد المشاركين</th><th colspan="2"></th></tr>
       </thead>
       <tbody>
         {% for course in courses %}
         <tr>
           <td>{{ course.name }}</td>
-          <td>{% if course.teacher %}{{ course.teacher.name }}{% else %}—{% endif %}</td>
+          <td>
+            {% if course.teachers.all %}
+              {% for teacher in course.teachers.all %}{{ teacher.name }}{% if not forloop.last %}، {% endif %}{% endfor %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
           <td>{{ course.student_count }}</td>
           <td><a href="{% url 'edit_course' course.id %}" class="edit-link">✏️ تعديل</a></td>
           <td>
@@ -210,6 +228,23 @@
   {% else %}
   <p style="font-size:13px; color:#9c8a71;">لا توجد دورات أو دروس إضافية بعد.</p>
   {% endif %}
+  </div>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.collapsible-panel').forEach(function(panel) {
+      if (panel.classList.contains('start-collapsed')) {
+        panel.classList.add('collapsed');
+      }
+      var header = panel.querySelector('h3');
+      if (!header) return;
+      header.style.cursor = 'pointer';
+      header.addEventListener('click', function() {
+        panel.classList.toggle('collapsed');
+      });
+    });
+  });
+</script>
 
 {% endblock %}

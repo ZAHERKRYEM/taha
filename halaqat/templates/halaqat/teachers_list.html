@@ -7,8 +7,8 @@
 {% csrf_token %}
 
 <div class="page-header">
-  <h2>الأساتذة</h2>
-  <div class="desc">كل الأساتذة، سواء المرتبطون بحلقة/دورة أو غير المرتبطين — لتسجيل تفقد من لم يُؤخذ له حضور اليوم</div>
+  <h2>الأساتذة غير المرتبطين</h2>
+  <div class="desc">هذه الصفحة تعرض فقط الأساتذة غير المرتبطين بحلقة أو دورة. حالة المرتبطين تُسجَّل عبر صفحة الحلقة أو الدورة.</div>
 </div>
 
 <div class="circle-detail-head">
@@ -19,11 +19,11 @@
 </div>
 
 <div class="stats-row">
-  <div class="stat-card"><div class="num">{{ total_teachers }}</div><div class="lbl">عدد الأساتذة</div></div>
+  <div class="stat-card"><div class="num">{{ total_teachers }}</div><div class="lbl">عدد الأساتذة غير المرتبطين</div></div>
   <div class="stat-card"><div class="num">{{ unrecorded_count }}</div><div class="lbl">لم يُسجَّل لهم شيء اليوم</div></div>
 </div>
 
-<p class="autosave-hint">💡 الحالة هنا تُسجَّل كـ"تفقد عام" مستقل، وتُحفظ فوراً بالضغط. إن كان للأستاذ سجل ضمن حلقة أو دورة اليوم ستراه أسفل اسمه.</p>
+<p class="autosave-hint">💡 الحالة هنا تُسجَّل كـ"تفقد عام" مستقل، وتُحفظ فوراً بالضغط. أساتذة الحلقات والدورات يُسجَّل لهم الحضور هناك.</p>
 
 {% if rows %}
 <div class="student-table" style="margin-top:14px;">
@@ -37,19 +37,7 @@
       <div class="avatar teacher-avatar">👨‍🏫</div>
       <div>
         <a href="{% url 'teacher_profile' row.teacher.id %}" style="color:var(--ink); font-weight:700;">{{ row.teacher.name }}</a>
-        {% if row.is_linked %}
-          <div class="absence-stats">
-            {% for c in row.circles %}<span>حلقة: {{ c.name }}</span>{% endfor %}
-            {% for c in row.courses %}<span>دورة: {{ c.name }}</span>{% endfor %}
-          </div>
-        {% else %}
-          <div class="absence-stats"><span style="background:var(--error-bg); color:var(--error);">غير مرتبط بأي حلقة أو دورة</span></div>
-        {% endif %}
-        {% if row.context_notes %}
-          <div class="absence-stats">
-            {% for note in row.context_notes %}<span>{{ note }}</span>{% endfor %}
-          </div>
-        {% endif %}
+        <div class="absence-stats"><span style="background:var(--error-bg); color:var(--error);">غير مرتبط بأي حلقة أو دورة</span></div>
       </div>
     </div>
     <div class="tristate">

@@ -32,7 +32,13 @@
     {% endif %}
     <div class="circle-icon">🎓</div>
     <h3>{{ card.course.name }}</h3>
-    <div class="teacher">{% if card.course.teacher %}الأستاذ {{ card.course.teacher.name }}{% else %}بدون أستاذ محدد{% endif %}</div>
+    <div class="teacher">
+      {% if card.course.teachers.all %}
+        {% for teacher in card.course.teachers.all %}{{ teacher.name }}{% if not forloop.last %}، {% endif %}{% endfor %}
+      {% else %}
+        بدون أستاذ محدد
+      {% endif %}
+    </div>
     <div class="row">
       <span>{{ card.student_count }} مشارك</span>
       {% if card.today_rate is not None %}
