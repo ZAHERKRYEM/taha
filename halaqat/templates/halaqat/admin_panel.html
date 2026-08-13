@@ -30,6 +30,10 @@
         <label for="{{ circle_form.description.id_for_label }}">وصف مختصر (اختياري)</label>
         {{ circle_form.description }}
       </div>
+      <div class="field">
+        <label for="{{ circle_form.display_order.id_for_label }}">ترتيب العرض</label>
+        {{ circle_form.display_order }}
+      </div>
       {% if circle_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
       <button type="submit" name="submit_circle" class="btn-primary">حفظ الحلقة</button>
     </form>

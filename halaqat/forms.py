@@ -23,15 +23,17 @@ class CircleForm(forms.ModelForm):
 
     class Meta:
         model = Circle
-        fields = ['name', 'teacher', 'description']
+        fields = ['name', 'teacher', 'description', 'display_order']
         labels = {
             'name': 'اسم الحلقة',
             'teacher': 'الأستاذ المسؤول',
             'description': 'وصف مختصر',
+            'display_order': 'ترتيب العرض',
         }
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'مثال: حلقة الأنعام'}),
             'description': forms.TextInput(attrs={'placeholder': 'وصف مختصر (اختياري)'}),
+            'display_order': forms.NumberInput(attrs={'min': '0', 'step': '1', 'placeholder': '0'}),
         }
 
     def __init__(self, *args, **kwargs):

@@ -2,6 +2,7 @@ import csv
 import datetime
 import io
 from random import randint
+import threading
 import time
 
 from django.conf import settings
@@ -24,7 +25,7 @@ from .whatsapp_utils import normalize_chat_id, send_whatsapp_text
 
 @login_required
 def circles_list(request):
-    circles = Circle.objects.select_related('teacher').order_by('id')
+    circles = Circle.objects.select_related('teacher').order_by('display_order', 'name', 'id')
     today = timezone.now().date()
 
     circle_cards = []
@@ -105,7 +106,7 @@ def circle_detail(request, circle_id):
         teacher_status = ta.status if ta else ''
 
     # للتنقل بين الحلقات دون الخروج من الصفحة (أزرار سابق/تالي + قائمة منسدلة)
-    all_circles = list(Circle.objects.order_by('name'))
+    all_circles = list(Circle.objects.order_by('display_order', 'name', 'id'))
     ids = [c.id for c in all_circles]
     idx = ids.index(circle.id) if circle.id in ids else None
     prev_circle = all_circles[idx - 1] if idx is not None and idx > 0 else None
@@ -452,6 +453,56 @@ def delete_teacher(request, pk):
     return redirect('teachers_list')
 
 
+def _queue_whatsapp_absent_messages(selected_date, circle, message_template):
+    """إرسال رسائل الغياب بشكل متسلسل في خيط منفصل مع تأخير بعد كل نجاح."""
+    records = Attendance.objects.filter(date=selected_date, status='absent')
+    if circle:
+        records = records.filter(circle=circle)
+    records = list(records.select_related('student', 'circle').order_by('circle__name', 'student__name'))
+
+    sent_names = []
+    failed_names = []
+    skipped_names = []
+
+    for index, record in enumerate(records):
+        student = record.student
+        phone = (student.phone or '').strip()
+        if not phone:
+            skipped_names.append(student.name)
+            continue
+
+        chat_id = normalize_chat_id(phone)
+        if not chat_id:
+            failed_names.append(student.name)
+            continue
+
+        text = message_template.format(
+            student_name=student.name,
+            circle_name=record.circle.name,
+            date=selected_date.strftime('%Y-%m-%d'),
+            week_absences=student.absence_count(7, selected_date),
+            month_absences=student.absence_count(30, selected_date),
+        )
+        if send_whatsapp_text(chat_id, text):
+            sent_names.append(student.name)
+            if index != len(records) - 1:
+                time.sleep(randint(1, 10))
+        else:
+            failed_names.append(student.name)
+
+    summary_lines = [
+        f'📤 تقرير إرسال واتساب للغياب ({selected_date.strftime("%Y-%m-%d")})',
+    ]
+    if circle:
+        summary_lines.append(f'الحلقة: {circle.name}')
+    summary_lines.append(f'✅ نجح: {", ".join(sent_names) if sent_names else "لا يوجد"}')
+    summary_lines.append(f'❌ فشل/غير مُرسل: {", ".join(failed_names) if failed_names else "لا يوجد"}')
+    if skipped_names:
+        summary_lines.append(f'⏭ أرقام ناقصة/غير صالحة: {", ".join(skipped_names)}')
+
+    send_telegram_message('\n'.join(summary_lines))
+
+
 @login_required
 def admin_panel(request):
     circle_form = CircleForm()
@@ -485,46 +536,14 @@ def admin_panel(request):
                 circle = whatsapp_form.cleaned_data['circle']
                 message_template = whatsapp_form.cleaned_data['message']
 
-                absent_records = Attendance.objects.filter(date=selected_date, status='absent')
-                if circle:
-                    absent_records = absent_records.filter(circle=circle)
-                absent_records = absent_records.select_related('student', 'circle')
+                thread = threading.Thread(
+                    target=_queue_whatsapp_absent_messages,
+                    args=(selected_date, circle, message_template),
+                    daemon=True,
+                )
+                thread.start()
 
-                sent = 0
-                failed = 0
-                skipped = 0
-                for record in absent_records:
-                    time.sleep(randint(1, 5))
-                    student = record.student
-                    phone = (student.phone or '').strip()
-                    if not phone:
-                        skipped += 1
-                        continue
-
-                    chat_id = normalize_chat_id(phone)
-                    if not chat_id:
-                        skipped += 1
-                        continue
-
-                    text = message_template.format(
-                        student_name=student.name,
-                        circle_name=record.circle.name,
-                        date=selected_date.strftime('%Y-%m-%d'),
-                        week_absences=student.absence_count(7, selected_date),
-                        month_absences=student.absence_count(30, selected_date),
-                    )
-                    ok = send_whatsapp_text(chat_id, text)
-                    if ok:
-                        sent += 1
-                    else:
-                        failed += 1
-
-                message_parts = [f'تم إرسال الرسالة إلى {sent} طالباً غائباً.']
-                if skipped:
-                    message_parts.append(f'تجاوزنا {skipped} طالباً لعدم وجود رقم هاتف صالح.')
-                if failed:
-                    message_parts.append(f'فشل الإرسال لـ {failed} حالة.')
-                messages.success(request, ' '.join(message_parts))
+                messages.success(request, 'تم بدء إرسال الرسائل للغائبين بشكل متسلسل في الخلفية. سيتم إرسال ملخص النتيجة إلى التلغرام عند الانتهاء.')
                 return redirect('admin_panel')
 
     context = {
@@ -532,7 +551,7 @@ def admin_panel(request):
         'student_form': student_form,
         'course_form': course_form,
         'whatsapp_form': whatsapp_form,
-        'circles': Circle.objects.select_related('teacher').all(),
+        'circles': Circle.objects.select_related('teacher').order_by('display_order', 'name', 'id'),
         'students': Student.objects.select_related('circle').all(),
         'courses': Course.objects.prefetch_related('teachers', 'students').all(),
         'active_nav': 'admin',

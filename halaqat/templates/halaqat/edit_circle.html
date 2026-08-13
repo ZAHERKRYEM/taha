@@ -28,6 +28,10 @@
       <label for="{{ form.description.id_for_label }}">وصف مختصر (اختياري)</label>
       {{ form.description }}
     </div>
+    <div class="field">
+      <label for="{{ form.display_order.id_for_label }}">ترتيب العرض</label>
+      {{ form.display_order }}
+    </div>
     {% if form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
     <button type="submit" class="btn-primary">حفظ التعديلات</button>
   </form>

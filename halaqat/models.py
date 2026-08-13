@@ -25,12 +25,13 @@ class Circle(models.Model):
         related_name='circles',
     )
     description = models.CharField('وصف مختصر', max_length=255, blank=True)
+    display_order = models.PositiveIntegerField('ترتيب العرض', default=0, help_text='كلما كان الرقم أصغر ظهرت الحلقة أولاً في قائمة الحلقات.')
     created_at = models.DateTimeField('تاريخ الإنشاء', auto_now_add=True)
 
     class Meta:
         verbose_name = 'حلقة'
         verbose_name_plural = 'الحلقات'
-        ordering = ['name']
+        ordering = ['display_order', 'name', 'id']
 
     def __str__(self):
         return self.name
