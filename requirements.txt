@@ -2,3 +2,4 @@ Django>=5.0,<5.2
 requests>=2.31
 dj-database-url
 psycopg[binary]
+openpyxl>=3.1

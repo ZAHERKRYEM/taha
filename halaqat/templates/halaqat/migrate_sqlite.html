@@ -1,0 +1,288 @@
+{% extends "halaqat/base.html" %}
+{% block title %}ترحيل قاعدة البيانات — مسجد طه{% endblock %}
+{% block content %}
+
+<style>
+  .migrate-wrap { max-width: 700px; margin: 0 auto; }
+
+  .migrate-header { margin-bottom: 24px; }
+  .migrate-header h2 { margin: 0 0 4px; font-size: 20px; }
+  .migrate-header p  { margin: 0; font-size: 13px; color: #9c8a71; }
+
+  /* بطاقة المسار */
+  .path-card {
+    background: #faf7f2;
+    border: 1px solid #e8ddd0;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: #7a6a55;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .path-card code {
+    background: #ede5d8;
+    border-radius: 5px;
+    padding: 2px 7px;
+    font-size: 12px;
+    color: #3a2e20;
+    word-break: break-all;
+  }
+
+  /* تحذير */
+  .warning-box {
+    background: #fff8e1;
+    border: 1.5px solid #f6c94e;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: #7a5f00;
+    line-height: 1.7;
+  }
+  .warning-box strong { color: #5a4200; }
+
+  /* جدول المقارنة */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .compare-table th {
+    background: #B17F4A;
+    color: #fff;
+    padding: 9px 14px;
+    text-align: right;
+    font-weight: 600;
+  }
+  .compare-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #eee8de;
+    vertical-align: middle;
+  }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table tr:nth-child(even) td { background: #faf7f2; }
+  .num { text-align: center; font-weight: 600; }
+  .num-sqlite { color: #2a7a3b; }
+  .num-pg     { color: #1a56a0; }
+  .badge-match    { color: #2a7a3b; font-size: 15px; }
+  .badge-mismatch { color: #c0392b; font-size: 15px; }
+
+  /* صف الإجمالي */
+  .compare-table .total-row td {
+    background: #f0e9de !important;
+    font-weight: 700;
+    font-size: 14px;
+    border-top: 2px solid #d4b896;
+  }
+
+  /* checkbox تأكيد */
+  .confirm-box {
+    background: #fff3f3;
+    border: 1.5px solid #e8a0a0;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: #5a1a1a;
+    cursor: pointer;
+  }
+  .confirm-box input[type=checkbox] {
+    width: 18px; height: 18px;
+    margin-top: 1px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  /* أزرار */
+  .action-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+  }
+  .btn-migrate {
+    background: #c0392b;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 26px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s;
+    font-family: inherit;
+  }
+  .btn-migrate:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+  .btn-migrate:not(:disabled):hover { background: #a93226; }
+  .btn-back {
+    color: #B17F4A;
+    text-decoration: none;
+    font-size: 13px;
+  }
+
+  /* نتائج الترحيل */
+  .results-card {
+    background: #f0fff4;
+    border: 2px solid #27ae60;
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+  }
+  .results-card h3 { margin: 0 0 14px; color: #1a6e3a; font-size: 16px; }
+  .results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .results-table td { padding: 7px 12px; border-bottom: 1px solid #c3e6cb; }
+  .results-table td:last-child { text-align: center; font-weight: 700; color: #1a6e3a; }
+  .results-table tr:last-child td { border-bottom: none; }
+  .total-count { font-size: 18px; font-weight: 800; color: #1a6e3a; margin-top: 12px; }
+
+  /* خطأ */
+  .error-card {
+    background: #fff3f3;
+    border: 2px solid #e74c3c;
+    border-radius: 12px;
+    padding: 18px 20px;
+    color: #5a1a1a;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .error-card h3 { margin: 0 0 8px; color: #c0392b; }
+
+  /* ملف غير موجود */
+  .nofile-card {
+    background: #fafafa;
+    border: 2px dashed #ccc;
+    border-radius: 12px;
+    padding: 30px;
+    text-align: center;
+    color: #999;
+    margin-bottom: 24px;
+  }
+  .nofile-card .icon { font-size: 40px; margin-bottom: 10px; }
+  .nofile-card code { background: #f0f0f0; padding: 3px 8px; border-radius: 4px; font-size: 12px; color: #555; }
+</style>
+
+<div class="migrate-wrap">
+
+  <div class="migrate-header">
+    <h2>🔄 ترحيل قاعدة البيانات</h2>
+    <p>نقل البيانات من ملف SQLite المحلي إلى PostgreSQL</p>
+  </div>
+
+  {# ── نتائج الترحيل (بعد POST ناجح) ── #}
+  {% if migration_done %}
+    <div class="results-card">
+      <h3>✅ اكتمل الترحيل بنجاح</h3>
+      <table class="results-table">
+        {% for label, count in results %}
+        <tr>
+          <td>{{ label }}</td>
+          <td>{{ count }} سجل</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="total-count">الإجمالي: {{ total }} سجل</div>
+    </div>
+    <div class="action-row">
+      <a href="{% url 'circles_list' %}" class="btn-primary" style="text-decoration:none; display:inline-block;">
+        🏠 الذهاب إلى الحلقات
+      </a>
+      <a href="{% url 'migrate_sqlite_to_postgres' %}" class="btn-back">← عرض الأرقام من جديد</a>
+    </div>
+
+  {# ── الملف غير موجود ── #}
+  {% elif not file_exists %}
+    <div class="path-card">
+      📂 المسار المتوقع: <code>{{ sqlite_path }}</code>
+    </div>
+    <div class="nofile-card">
+      <div class="icon">📭</div>
+      <p><strong>ملف db.sqlite3 غير موجود</strong></p>
+      <p style="font-size:12px;">ضع ملف قاعدة البيانات في جذر المشروع باسم <code>db.sqlite3</code> ثم أعد تحميل هذه الصفحة.</p>
+    </div>
+    <a href="{% url 'admin_panel' %}" class="btn-back">← العودة للوحة التحكم</a>
+
+  {# ── صفحة المعاينة والتأكيد (GET عادي) ── #}
+  {% else %}
+    <div class="path-card">
+      📂 ملف SQLite: <code>{{ sqlite_path }}</code>
+    </div>
+
+    <div class="warning-box">
+      ⚠️ <strong>تنبيه مهم:</strong> سيتم <strong>مسح جميع بيانات PostgreSQL الحالية</strong>
+      واستبدالها بالبيانات الموجودة في ملف SQLite.<br>
+      هذه العملية <strong>لا يمكن التراجع عنها</strong> — تأكد من أن لديك نسخة احتياطية إذا لزم.
+    </div>
+
+    {# جدول المقارنة #}
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>البيانات</th>
+          <th style="text-align:center;">SQLite (المصدر)</th>
+          <th style="text-align:center;">PostgreSQL (الهدف)</th>
+          <th style="text-align:center;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="num num-sqlite">{{ row.sqlite }}</td>
+          <td class="num num-pg">{{ row.pg }}</td>
+          <td class="num">
+            {% if row.match %}
+              <span class="badge-match" title="متطابق">✓</span>
+            {% else %}
+              <span class="badge-mismatch" title="مختلف">≠</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        <tr class="total-row">
+          <td>الإجمالي</td>
+          <td class="num num-sqlite">{{ total_sqlite }}</td>
+          <td class="num num-pg">{{ total_pg }}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+
+    {# تأكيد + زر الترحيل #}
+    {% if total_sqlite > 0 %}
+    <form method="post" id="migrate-form">
+      {% csrf_token %}
+      <label class="confirm-box" for="confirm-check">
+        <input type="checkbox" id="confirm-check"
+               onchange="document.getElementById('migrate-btn').disabled = !this.checked;">
+        <span>أفهم أن هذه العملية ستمسح جميع بيانات PostgreSQL الحالية وتستبدلها ببيانات SQLite، وأريد المتابعة.</span>
+      </label>
+      <div class="action-row">
+        <button type="submit" id="migrate-btn" class="btn-migrate" disabled>
+          🔄 ترحيل البيانات الآن
+        </button>
+        <a href="{% url 'admin_panel' %}" class="btn-back">← إلغاء</a>
+      </div>
+    </form>
+    {% else %}
+    <div class="nofile-card">
+      <div class="icon">📭</div>
+      <p>ملف SQLite فارغ أو لا يحتوي بيانات.</p>
+    </div>
+    <a href="{% url 'admin_panel' %}" class="btn-back">← العودة للوحة التحكم</a>
+    {% endif %}
+
+  {% endif %}
+
+</div>
+{% endblock %}

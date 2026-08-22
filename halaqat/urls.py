@@ -31,4 +31,10 @@ urlpatterns = [
 
     path('students/<int:student_id>/profile/', views.student_profile, name='student_profile'),
     path('teachers/<int:teacher_id>/profile/', views.teacher_profile, name='teacher_profile'),
+
+    # ── نسخة احتياطية فورية: يُولِّد Excel ويرسله تلغرام فوراً ──
+    path('send-telegram-backup/', views.send_all_data_telegram, name='send_all_data_telegram'),
+
+    # ── ترحيل البيانات من SQLite إلى PostgreSQL ──
+    path('migrate-db/', views.migrate_sqlite_to_postgres, name='migrate_sqlite_to_postgres'),
 ]

@@ -12,6 +12,7 @@ from django.core.paginator import Paginator
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
+from django.db import transaction
 from django.views.decorators.http import require_POST
 
 from .models import (
@@ -19,7 +20,7 @@ from .models import (
     Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance,
 )
 from .forms import CircleForm, StudentForm, CourseForm, WhatsAppAbsentForm
-from .telegram_utils import send_telegram_message
+from .telegram_utils import send_telegram_message, send_telegram_document_bytes
 from .whatsapp_utils import normalize_chat_id, send_whatsapp_text
 
 
@@ -886,3 +887,432 @@ def export_course_attendance_csv(request):
     response = HttpResponse(buffer.getvalue(), content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+# ============================================================
+#  إرسال نسخة احتياطية فورية كاملة إلى تلغرام (Excel)
+# ============================================================
+
+@login_required
+def send_all_data_telegram(request):
+    """
+    يُولِّد ملف Excel متعدد الأوراق يحوي جميع بيانات المسجد
+    (أساتذة، حلقات، طلاب، حضور، دورات) ويرسله فوراً إلى تلغرام.
+    محمي بتسجيل الدخول ويسجّل العملية في لوحة التحكم.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        messages.error(request, '❌ مكتبة openpyxl غير مثبتة. شغّل: pip install openpyxl')
+        return redirect('admin_panel')
+
+    # ---- ثوابت التنسيق ----
+    HEADER_FILL = PatternFill(start_color='B17F4A', end_color='B17F4A', fill_type='solid')
+    HEADER_FONT = Font(bold=True, color='FFFFFF', name='Arial')
+    HEADER_ALIGN = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    def _style_sheet(ws, headers, col_widths):
+        """يضيف صف العناوين بتنسيق موحّد ويضبط عرض الأعمدة."""
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = HEADER_ALIGN
+        ws.row_dimensions[1].height = 22
+        for idx, width in enumerate(col_widths, 1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+        ws.freeze_panes = 'A2'   # تجميد صف العناوين عند التمرير
+        ws.sheet_view.rightToLeft = True
+
+    wb = openpyxl.Workbook()
+    today = timezone.now().date()
+    today_str = today.isoformat()
+
+    # ── ورقة 1: الأساتذة ──────────────────────────────────────
+    ws_teachers = wb.active
+    ws_teachers.title = 'الأساتذة'
+    _style_sheet(ws_teachers, ['م', 'اسم الأستاذ', 'رقم الهاتف'], [5, 30, 20])
+    for i, t in enumerate(Teacher.objects.order_by('name'), 1):
+        ws_teachers.append([i, t.name, t.phone or '—'])
+
+    # ── ورقة 2: الحلقات ───────────────────────────────────────
+    ws_circles = wb.create_sheet('الحلقات')
+    _style_sheet(ws_circles,
+                 ['م', 'اسم الحلقة', 'الأستاذ', 'عدد الطلاب', 'الوصف', 'ترتيب العرض'],
+                 [5, 28, 28, 12, 35, 13])
+    for i, c in enumerate(Circle.objects.select_related('teacher').order_by('display_order', 'name'), 1):
+        ws_circles.append([i, c.name,
+                           c.teacher.name if c.teacher else '—',
+                           c.student_count, c.description or '—', c.display_order])
+
+    # ── ورقة 3: الطلاب ────────────────────────────────────────
+    ws_students = wb.create_sheet('الطلاب')
+    _style_sheet(ws_students,
+                 ['م', 'اسم الطالب', 'الحلقة', 'رقم الهاتف', 'ملاحظات', 'تاريخ الانضمام'],
+                 [5, 30, 28, 18, 32, 15])
+    for i, s in enumerate(
+        Student.objects.select_related('circle').order_by('circle__display_order', 'circle__name', 'name'), 1
+    ):
+        ws_students.append([i, s.name, s.circle.name,
+                            s.phone or '—', s.notes or '—',
+                            s.joined_at.date().isoformat()])
+
+    # ── ورقة 4: سجل حضور الحلقات ─────────────────────────────
+    ws_att = wb.create_sheet('حضور الحلقات')
+    _style_sheet(ws_att,
+                 ['التاريخ', 'الحلقة', 'النوع', 'الاسم', 'الحالة'],
+                 [14, 28, 10, 30, 10])
+    for ta in TeacherAttendance.objects.select_related('teacher', 'circle').order_by('-date', 'circle__name'):
+        ws_att.append([ta.date.isoformat(), ta.circle.name, 'أستاذ',
+                       ta.teacher.name, ta.get_status_display()])
+    for a in Attendance.objects.select_related('student', 'circle').order_by('-date', 'circle__name', 'student__name'):
+        ws_att.append([a.date.isoformat(), a.circle.name, 'طالب',
+                       a.student.name, a.get_status_display()])
+
+    # ── ورقة 5: الدورات ──────────────────────────────────────
+    ws_courses = wb.create_sheet('الدورات')
+    _style_sheet(ws_courses,
+                 ['م', 'اسم الدورة', 'الأساتذة', 'عدد الطلاب', 'الوصف'],
+                 [5, 32, 32, 13, 35])
+    for i, c in enumerate(Course.objects.prefetch_related('teachers', 'students').order_by('name'), 1):
+        teachers_str = '، '.join(t.name for t in c.teachers.all()) or '—'
+        ws_courses.append([i, c.name, teachers_str, c.student_count, c.description or '—'])
+
+    # ── ورقة 6: سجل حضور الدورات ─────────────────────────────
+    ws_catt = wb.create_sheet('حضور الدورات')
+    _style_sheet(ws_catt,
+                 ['التاريخ', 'الدورة', 'النوع', 'الاسم', 'الحالة'],
+                 [14, 30, 10, 30, 10])
+    for cta in CourseTeacherAttendance.objects.select_related('teacher', 'course').order_by('-date', 'course__name'):
+        ws_catt.append([cta.date.isoformat(), cta.course.name, 'أستاذ',
+                        cta.teacher.name, cta.get_status_display()])
+    for ca in CourseAttendance.objects.select_related('student', 'course').order_by('-date', 'course__name', 'student__name'):
+        ws_catt.append([ca.date.isoformat(), ca.course.name, 'طالب',
+                        ca.student.name, ca.get_status_display()])
+
+    # ── تجميع الملف وإرساله ───────────────────────────────────
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+
+    # ملخص في caption التلغرام
+    caption = (
+        f'📊 بيانات مسجد طه — {today_str}\n'
+        f'👥 الطلاب: {Student.objects.count()} | '
+        f'📖 الحلقات: {Circle.objects.count()} | '
+        f'🎓 الدورات: {Course.objects.count()} | '
+        f'👨‍🏫 الأساتذة: {Teacher.objects.count()}'
+    )
+    export_filename = f'masjid_taha_{today_str}.xlsx'
+
+    ok = send_telegram_document_bytes(excel_buffer.getvalue(), export_filename, caption=caption)
+
+    if ok:
+        messages.success(request, '✅ تم إرسال ملف البيانات الكاملة إلى تلغرام بنجاح.')
+        _log_admin_action(request, f'📤 إرسال بيانات Excel كاملة إلى تلغرام')
+    else:
+        messages.error(request, '❌ فشل الإرسال إلى تلغرام. تحقق من إعدادات البوت والاتصال بالإنترنت.')
+
+    return redirect('admin_panel')
+
+# ============================================================
+#  ترحيل البيانات من SQLite إلى PostgreSQL
+# ============================================================
+
+# ترتيب الحذف والاستيراد يحترم علاقات FK:
+#   الحذف:   TeacherDailyAttendance → CourseTeacherAttendance → CourseAttendance
+#            → Course (تحذف M2M تلقائياً) → TeacherAttendance → Attendance
+#            → Student → Circle → Teacher
+#   الاستيراد: عكس الترتيب أعلاه تماماً
+
+_SQLITE_TABLES = [
+    # (label_ar, table_name, model_class أو None لجداول M2M)
+    ('الأساتذة',            'halaqat_teacher',                    Teacher),
+    ('الحلقات',             'halaqat_circle',                     Circle),
+    ('الطلاب',              'halaqat_student',                    Student),
+    ('حضور الطلاب',         'halaqat_attendance',                 Attendance),
+    ('حضور الأساتذة',       'halaqat_teacherattendance',          TeacherAttendance),
+    ('الدورات',             'halaqat_course',                     Course),
+    ('أساتذة الدورات M2M',  'halaqat_course_teachers',            None),
+    ('طلاب الدورات M2M',   'halaqat_course_students',            None),
+    ('حضور الدورات',        'halaqat_courseattendance',           CourseAttendance),
+    ('حضور أساتذة الدورات', 'halaqat_courseteacherattendance',   CourseTeacherAttendance),
+    ('التفقد العام',        'halaqat_teacherdailyattendance',     TeacherDailyAttendance),
+]
+
+
+def _sqlite_count(conn, table):
+    """إرجاع عدد الصفوف في جدول SQLite (0 إذا لم يوجد)."""
+    try:
+        return conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+    except Exception:
+        return 0
+
+
+def _reset_pg_sequences():
+    """إعادة ضبط تسلسلات auto-increment في PostgreSQL بعد INSERT بـ IDs محددة يدوياً."""
+    from django.db import connection as pg_conn
+    if 'postgresql' not in pg_conn.settings_dict.get('ENGINE', ''):
+        return  # SQLite في بيئة الاختبار — لا حاجة لضبط تسلسلات
+    seq_tables = [
+        'halaqat_teacher', 'halaqat_circle', 'halaqat_student',
+        'halaqat_attendance', 'halaqat_teacherattendance', 'halaqat_course',
+        'halaqat_courseattendance', 'halaqat_courseteacherattendance',
+        'halaqat_teacherdailyattendance',
+    ]
+    with pg_conn.cursor() as cur:
+        for table in seq_tables:
+            cur.execute(f"""
+                SELECT setval(
+                    pg_get_serial_sequence('{table}', 'id'),
+                    COALESCE((SELECT MAX(id) FROM "{table}"), 1)
+                )
+            """)
+
+
+@login_required
+def migrate_sqlite_to_postgres(request):
+    """
+    GET  → معاينة: يُقارن بين عدد السجلات في SQLite و PostgreSQL.
+    POST → تنفيذ: يمسح PostgreSQL ثم يستورد كل البيانات من SQLite مع الحفاظ على IDs الأصلية.
+    """
+    import sqlite3 as sqlite3_lib
+    import os
+
+    sqlite_path = os.path.join(settings.BASE_DIR, 'db.sqlite3')
+
+    # ────────────────────────────────────────────────────────
+    #  GET: صفحة المعاينة والتأكيد
+    # ────────────────────────────────────────────────────────
+    if request.method == 'GET':
+        file_exists = os.path.exists(sqlite_path)
+        preview = []
+        total_sqlite = total_pg = 0
+
+        if file_exists:
+            conn = sqlite3_lib.connect(sqlite_path)
+            pg_counts = {
+                'halaqat_teacher':                  Teacher.objects.count(),
+                'halaqat_circle':                   Circle.objects.count(),
+                'halaqat_student':                  Student.objects.count(),
+                'halaqat_attendance':               Attendance.objects.count(),
+                'halaqat_teacherattendance':        TeacherAttendance.objects.count(),
+                'halaqat_course':                   Course.objects.count(),
+                'halaqat_course_teachers':          Course.teachers.through.objects.count(),
+                'halaqat_course_students':          Course.students.through.objects.count(),
+                'halaqat_courseattendance':         CourseAttendance.objects.count(),
+                'halaqat_courseteacherattendance':  CourseTeacherAttendance.objects.count(),
+                'halaqat_teacherdailyattendance':   TeacherDailyAttendance.objects.count(),
+            }
+            for label, table, _ in _SQLITE_TABLES:
+                sq = _sqlite_count(conn, table)
+                pg = pg_counts.get(table, 0)
+                preview.append({'label': label, 'sqlite': sq, 'pg': pg, 'match': sq == pg})
+                total_sqlite += sq
+                total_pg += pg
+            conn.close()
+
+        return render(request, 'halaqat/migrate_sqlite.html', {
+            'active_nav': 'admin',
+            'sqlite_path': sqlite_path,
+            'file_exists': file_exists,
+            'preview': preview,
+            'total_sqlite': total_sqlite,
+            'total_pg': total_pg,
+        })
+
+    # ────────────────────────────────────────────────────────
+    #  POST: تنفيذ الترحيل
+    # ────────────────────────────────────────────────────────
+    import sqlite3 as sqlite3_lib
+
+    if not os.path.exists(sqlite_path):
+        messages.error(request, f'❌ ملف db.sqlite3 غير موجود في: {sqlite_path}')
+        return redirect('migrate_sqlite_to_postgres')
+
+    conn = sqlite3_lib.connect(sqlite_path)
+    conn.row_factory = sqlite3_lib.Row
+    results = []
+
+    try:
+        with transaction.atomic():
+
+            # ── 1. مسح PostgreSQL بالترتيب العكسي لـ FK ──────────
+            TeacherDailyAttendance.objects.all().delete()
+            CourseTeacherAttendance.objects.all().delete()
+            CourseAttendance.objects.all().delete()
+            Course.objects.all().delete()        # يحذف M2M تلقائياً
+            TeacherAttendance.objects.all().delete()
+            Attendance.objects.all().delete()
+            Student.objects.all().delete()
+            Circle.objects.all().delete()
+            Teacher.objects.all().delete()
+
+            # ── 2. Teacher ─────────────────────────────────────────
+            rows = list(conn.execute('SELECT id, name, phone FROM halaqat_teacher'))
+            Teacher.objects.bulk_create([
+                Teacher(id=r['id'], name=r['name'], phone=r['phone'] or '')
+                for r in rows
+            ])
+            results.append(('الأساتذة', len(rows)))
+
+            # ── 3. Circle ──────────────────────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, name, teacher_id, description, display_order, created_at FROM halaqat_circle'
+            ))
+            objs = []
+            for r in rows:
+                obj = Circle(
+                    id=r['id'], name=r['name'], teacher_id=r['teacher_id'],
+                    description=r['description'] or '', display_order=r['display_order'] or 0,
+                )
+                obj.created_at = r['created_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            Circle.objects.bulk_create(objs)
+            results.append(('الحلقات', len(objs)))
+
+            # ── 4. Student ─────────────────────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, name, phone, circle_id, notes, joined_at FROM halaqat_student'
+            ))
+            objs = []
+            for r in rows:
+                obj = Student(
+                    id=r['id'], name=r['name'], phone=r['phone'] or '',
+                    circle_id=r['circle_id'], notes=r['notes'] or '',
+                )
+                obj.joined_at = r['joined_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            Student.objects.bulk_create(objs)
+            results.append(('الطلاب', len(objs)))
+
+            # ── 5. Attendance ──────────────────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, student_id, circle_id, date, status, recorded_at FROM halaqat_attendance'
+            ))
+            objs = []
+            for r in rows:
+                obj = Attendance(
+                    id=r['id'], student_id=r['student_id'], circle_id=r['circle_id'],
+                    date=r['date'], status=r['status'],
+                )
+                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            Attendance.objects.bulk_create(objs, ignore_conflicts=True)
+            results.append(('حضور الطلاب', len(objs)))
+
+            # ── 6. TeacherAttendance ───────────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, teacher_id, circle_id, date, status, recorded_at FROM halaqat_teacherattendance'
+            ))
+            objs = []
+            for r in rows:
+                obj = TeacherAttendance(
+                    id=r['id'], teacher_id=r['teacher_id'], circle_id=r['circle_id'],
+                    date=r['date'], status=r['status'],
+                )
+                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            TeacherAttendance.objects.bulk_create(objs, ignore_conflicts=True)
+            results.append(('حضور الأساتذة', len(objs)))
+
+            # ── 7. Course ──────────────────────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, name, description, created_at FROM halaqat_course'
+            ))
+            objs = []
+            for r in rows:
+                obj = Course(id=r['id'], name=r['name'], description=r['description'] or '')
+                obj.created_at = r['created_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            Course.objects.bulk_create(objs)
+            results.append(('الدورات', len(objs)))
+
+            # ── 8. Course.teachers M2M ─────────────────────────────
+            rows = list(conn.execute('SELECT course_id, teacher_id FROM halaqat_course_teachers'))
+            if rows:
+                from django.db import connection as pg_conn
+                with pg_conn.cursor() as cur:
+                    cur.executemany(
+                        'INSERT INTO halaqat_course_teachers (course_id, teacher_id) VALUES (%s, %s)',
+                        [(r['course_id'], r['teacher_id']) for r in rows]
+                    )
+            results.append(('أساتذة الدورات (M2M)', len(rows)))
+
+            # ── 9. Course.students M2M ─────────────────────────────
+            rows = list(conn.execute('SELECT course_id, student_id FROM halaqat_course_students'))
+            if rows:
+                with pg_conn.cursor() as cur:
+                    cur.executemany(
+                        'INSERT INTO halaqat_course_students (course_id, student_id) VALUES (%s, %s)',
+                        [(r['course_id'], r['student_id']) for r in rows]
+                    )
+            results.append(('طلاب الدورات (M2M)', len(rows)))
+
+            # ── 10. CourseAttendance ───────────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, student_id, course_id, date, status, recorded_at FROM halaqat_courseattendance'
+            ))
+            objs = []
+            for r in rows:
+                obj = CourseAttendance(
+                    id=r['id'], student_id=r['student_id'], course_id=r['course_id'],
+                    date=r['date'], status=r['status'],
+                )
+                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            CourseAttendance.objects.bulk_create(objs, ignore_conflicts=True)
+            results.append(('حضور الدورات', len(objs)))
+
+            # ── 11. CourseTeacherAttendance ────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, teacher_id, course_id, date, status, recorded_at FROM halaqat_courseteacherattendance'
+            ))
+            objs = []
+            for r in rows:
+                obj = CourseTeacherAttendance(
+                    id=r['id'], teacher_id=r['teacher_id'], course_id=r['course_id'],
+                    date=r['date'], status=r['status'],
+                )
+                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            CourseTeacherAttendance.objects.bulk_create(objs, ignore_conflicts=True)
+            results.append(('حضور أساتذة الدورات', len(objs)))
+
+            # ── 12. TeacherDailyAttendance ─────────────────────────
+            rows = list(conn.execute(
+                'SELECT id, teacher_id, date, status, recorded_at FROM halaqat_teacherdailyattendance'
+            ))
+            objs = []
+            for r in rows:
+                obj = TeacherDailyAttendance(
+                    id=r['id'], teacher_id=r['teacher_id'],
+                    date=r['date'], status=r['status'],
+                )
+                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                objs.append(obj)
+            TeacherDailyAttendance.objects.bulk_create(objs, ignore_conflicts=True)
+            results.append(('التفقد العام', len(objs)))
+
+            # ── 13. إعادة ضبط sequences PostgreSQL ─────────────────
+            _reset_pg_sequences()
+
+    except Exception as exc:
+        conn.close()
+        messages.error(request, f'❌ فشل الترحيل — تم التراجع عن كل التغييرات: {exc}')
+        _log_admin_action(request, f'❌ فشل ترحيل SQLite→PostgreSQL: {exc}')
+        return redirect('migrate_sqlite_to_postgres')
+
+    conn.close()
+    total = sum(c for _, c in results)
+    _log_admin_action(request, f'🔄 ترحيل SQLite→PostgreSQL اكتمل ({total} سجل)')
+
+    return render(request, 'halaqat/migrate_sqlite.html', {
+        'active_nav': 'admin',
+        'sqlite_path': sqlite_path,
+        'migration_done': True,
+        'results': results,
+        'total': total,
+    })

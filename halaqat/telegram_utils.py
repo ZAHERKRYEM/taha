@@ -44,7 +44,7 @@ def send_telegram_message(text):
 
 
 def send_telegram_document(file_path, caption=''):
-    """إرسال ملف (مثل نسخة قاعدة البيانات) للمحادثة المُعرَّفة في الإعدادات."""
+    """إرسال ملف من القرص (مثل نسخة قاعدة البيانات) للمحادثة المُعرَّفة في الإعدادات."""
     if not _is_configured():
         logger.info('Telegram غير مُهيأ (التوكن أو chat_id فارغ) - تم تجاهل إرسال الملف: %s', file_path)
         return False
@@ -62,5 +62,28 @@ def send_telegram_document(file_path, caption=''):
             return False
         return True
     except (requests.RequestException, OSError) as exc:
+        logger.warning('خطأ أثناء إرسال ملف تلغرام: %s', exc)
+        return False
+
+
+def send_telegram_document_bytes(file_bytes, filename, caption=''):
+    """إرسال ملف من الذاكرة مباشرة (bytes) دون الحاجة لحفظه على القرص أولاً.
+    مفيد للتقارير المُولَّدة ديناميكياً (مثل تصدير Excel الفوري)."""
+    if not _is_configured():
+        logger.info('Telegram غير مُهيأ (التوكن أو chat_id فارغ) - تم تجاهل إرسال الملف: %s', filename)
+        return False
+    try:
+        url = TELEGRAM_API_BASE.format(token=settings.TELEGRAM_BOT_TOKEN, method='sendDocument')
+        response = requests.post(
+            url,
+            data={'chat_id': settings.TELEGRAM_CHAT_ID, 'caption': caption},
+            files={'document': (filename, file_bytes)},
+            timeout=60,
+        )
+        if not response.ok:
+            logger.warning('فشل إرسال ملف تلغرام: %s - %s', response.status_code, response.text)
+            return False
+        return True
+    except requests.RequestException as exc:
         logger.warning('خطأ أثناء إرسال ملف تلغرام: %s', exc)
         return False
