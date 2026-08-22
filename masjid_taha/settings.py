@@ -58,24 +58,24 @@ TEMPLATES = [
 WSGI_APPLICATION = 'masjid_taha.wsgi.application'
 
 # قاعدة البيانات - SQLite للتطوير المحلي
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
-
 # DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": "taha_pi6e",
-#         "USER": "taha_pi6e_user",
-#         "PASSWORD": "v5uJi8rFYNab82J7bWGJvaKS8uAqc5n4",
-#         "HOST": "dpg-d9v14j95efls73dm2pmg-a",
-#         "PORT": "5432"
-    
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "taha_pi6e",
+        "USER": "taha_pi6e_user",
+        "PASSWORD": "v5uJi8rFYNab82J7bWGJvaKS8uAqc5n4",
+        "HOST": "dpg-d9v14j95efls73dm2pmg-a",
+        "PORT": "5432"
+    
+    }
+}
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
