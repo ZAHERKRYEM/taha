@@ -1051,6 +1051,62 @@ def _sqlite_count(conn, table):
         return 0
 
 
+def _sqlite_read(conn, table):
+    """
+    يقرأ جدول SQLite بأمان ويعيد (مجموعة أسماء الأعمدة المتاحة، قائمة الصفوف).
+    يعيد (set(), []) إذا لم يوجد الجدول أو كان فارغاً.
+    """
+    try:
+        cur = conn.execute(f'PRAGMA table_info("{table}")')
+        available = {row[1] for row in cur.fetchall()}
+        if not available:
+            return set(), []
+        rows = conn.execute(f'SELECT * FROM "{table}"').fetchall()
+        return available, rows
+    except Exception:
+        return set(), []
+
+
+def _field_default(model_cls, field_name):
+    """
+    يعيد القيمة الافتراضية لحقل Django — يُستخدم عند غياب العمود في SQLite القديم.
+    يرجع None إذا لم يكن للحقل قيمة افتراضية.
+    """
+    from django.db import models as dj_models
+    try:
+        field = model_cls._meta.get_field(field_name)
+    except Exception:
+        return None
+    if field.has_default():
+        d = field.default
+        return d() if callable(d) else d
+    # احتياطي حسب نوع الحقل
+    if isinstance(field, (dj_models.CharField, dj_models.TextField)):
+        return ''
+    if isinstance(field, (dj_models.IntegerField, dj_models.SmallIntegerField,
+                          dj_models.PositiveIntegerField, dj_models.PositiveSmallIntegerField)):
+        return 0
+    if isinstance(field, dj_models.BooleanField):
+        return False
+    return None
+
+
+def _col(row, col, available, fallback=None):
+    """
+    يقرأ قيمة عمود من صف SQLite بأمان مع حالتين:
+    1. العمود غائب تماماً (أُضيف لاحقاً في PostgreSQL) → يعيد fallback.
+    2. العمود موجود لكن قيمته NULL وتوجد قيمة افتراضية → يعيد fallback.
+    هذا يمنع خطأ NOT NULL constraint حين تُرك الحقل فارغاً في السجلات القديمة.
+    """
+    if col not in available:
+        return fallback
+    val = row[col]
+    # إذا كانت القيمة NULL في SQLite والـ fallback ليس None، استخدم الافتراضي
+    if val is None and fallback is not None:
+        return fallback
+    return val
+
+
 def _reset_pg_sequences():
     """إعادة ضبط تسلسلات auto-increment في PostgreSQL بعد INSERT بـ IDs محددة يدوياً."""
     from django.db import connection as pg_conn
@@ -1151,147 +1207,160 @@ def migrate_sqlite_to_postgres(request):
             Teacher.objects.all().delete()
 
             # ── 2. Teacher ─────────────────────────────────────────
-            rows = list(conn.execute('SELECT id, name, phone FROM halaqat_teacher'))
+            avail, rows = _sqlite_read(conn, 'halaqat_teacher')
             Teacher.objects.bulk_create([
-                Teacher(id=r['id'], name=r['name'], phone=r['phone'] or '')
-                for r in rows
+                Teacher(
+                    id=r['id'],
+                    name=r['name'],
+                    phone=_col(r, 'phone', avail, _field_default(Teacher, 'phone')),
+                ) for r in rows
             ])
             results.append(('الأساتذة', len(rows)))
 
             # ── 3. Circle ──────────────────────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, name, teacher_id, description, display_order, created_at FROM halaqat_circle'
-            ))
+            # مثال: display_order قد يغيب في SQLite القديم → يأخذ قيمته الافتراضية تلقائياً
+            avail, rows = _sqlite_read(conn, 'halaqat_circle')
             objs = []
             for r in rows:
                 obj = Circle(
-                    id=r['id'], name=r['name'], teacher_id=r['teacher_id'],
-                    description=r['description'] or '', display_order=r['display_order'] or 0,
+                    id=r['id'],
+                    name=r['name'],
+                    teacher_id=_col(r, 'teacher_id', avail),
+                    description=_col(r, 'description', avail, _field_default(Circle, 'description')),
+                    display_order=_col(r, 'display_order', avail, _field_default(Circle, 'display_order')),
                 )
-                obj.created_at = r['created_at'] or timezone.now().isoformat()
+                obj.created_at = _col(r, 'created_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             Circle.objects.bulk_create(objs)
             results.append(('الحلقات', len(objs)))
 
             # ── 4. Student ─────────────────────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, name, phone, circle_id, notes, joined_at FROM halaqat_student'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_student')
             objs = []
             for r in rows:
                 obj = Student(
-                    id=r['id'], name=r['name'], phone=r['phone'] or '',
-                    circle_id=r['circle_id'], notes=r['notes'] or '',
+                    id=r['id'],
+                    name=r['name'],
+                    circle_id=r['circle_id'],
+                    phone=_col(r, 'phone', avail, _field_default(Student, 'phone')),
+                    notes=_col(r, 'notes', avail, _field_default(Student, 'notes')),
                 )
-                obj.joined_at = r['joined_at'] or timezone.now().isoformat()
+                obj.joined_at = _col(r, 'joined_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             Student.objects.bulk_create(objs)
             results.append(('الطلاب', len(objs)))
 
             # ── 5. Attendance ──────────────────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, student_id, circle_id, date, status, recorded_at FROM halaqat_attendance'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_attendance')
             objs = []
             for r in rows:
                 obj = Attendance(
-                    id=r['id'], student_id=r['student_id'], circle_id=r['circle_id'],
-                    date=r['date'], status=r['status'],
+                    id=r['id'],
+                    student_id=r['student_id'],
+                    circle_id=r['circle_id'],
+                    date=r['date'],
+                    status=_col(r, 'status', avail, 'present'),
                 )
-                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             Attendance.objects.bulk_create(objs, ignore_conflicts=True)
             results.append(('حضور الطلاب', len(objs)))
 
             # ── 6. TeacherAttendance ───────────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, teacher_id, circle_id, date, status, recorded_at FROM halaqat_teacherattendance'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_teacherattendance')
             objs = []
             for r in rows:
                 obj = TeacherAttendance(
-                    id=r['id'], teacher_id=r['teacher_id'], circle_id=r['circle_id'],
-                    date=r['date'], status=r['status'],
+                    id=r['id'],
+                    teacher_id=r['teacher_id'],
+                    circle_id=r['circle_id'],
+                    date=r['date'],
+                    status=_col(r, 'status', avail, 'present'),
                 )
-                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             TeacherAttendance.objects.bulk_create(objs, ignore_conflicts=True)
             results.append(('حضور الأساتذة', len(objs)))
 
             # ── 7. Course ──────────────────────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, name, description, created_at FROM halaqat_course'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_course')
             objs = []
             for r in rows:
-                obj = Course(id=r['id'], name=r['name'], description=r['description'] or '')
-                obj.created_at = r['created_at'] or timezone.now().isoformat()
+                obj = Course(
+                    id=r['id'],
+                    name=r['name'],
+                    description=_col(r, 'description', avail, _field_default(Course, 'description')),
+                )
+                obj.created_at = _col(r, 'created_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             Course.objects.bulk_create(objs)
             results.append(('الدورات', len(objs)))
 
             # ── 8. Course.teachers M2M ─────────────────────────────
-            rows = list(conn.execute('SELECT course_id, teacher_id FROM halaqat_course_teachers'))
-            if rows:
+            avail_m, rows_m = _sqlite_read(conn, 'halaqat_course_teachers')
+            if rows_m:
                 from django.db import connection as pg_conn
                 with pg_conn.cursor() as cur:
                     cur.executemany(
                         'INSERT INTO halaqat_course_teachers (course_id, teacher_id) VALUES (%s, %s)',
-                        [(r['course_id'], r['teacher_id']) for r in rows]
+                        [(r['course_id'], r['teacher_id']) for r in rows_m]
                     )
-            results.append(('أساتذة الدورات (M2M)', len(rows)))
+            results.append(('أساتذة الدورات (M2M)', len(rows_m)))
 
             # ── 9. Course.students M2M ─────────────────────────────
-            rows = list(conn.execute('SELECT course_id, student_id FROM halaqat_course_students'))
-            if rows:
+            avail_m, rows_m = _sqlite_read(conn, 'halaqat_course_students')
+            if rows_m:
+                from django.db import connection as pg_conn
                 with pg_conn.cursor() as cur:
                     cur.executemany(
                         'INSERT INTO halaqat_course_students (course_id, student_id) VALUES (%s, %s)',
-                        [(r['course_id'], r['student_id']) for r in rows]
+                        [(r['course_id'], r['student_id']) for r in rows_m]
                     )
-            results.append(('طلاب الدورات (M2M)', len(rows)))
+            results.append(('طلاب الدورات (M2M)', len(rows_m)))
 
             # ── 10. CourseAttendance ───────────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, student_id, course_id, date, status, recorded_at FROM halaqat_courseattendance'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_courseattendance')
             objs = []
             for r in rows:
                 obj = CourseAttendance(
-                    id=r['id'], student_id=r['student_id'], course_id=r['course_id'],
-                    date=r['date'], status=r['status'],
+                    id=r['id'],
+                    student_id=r['student_id'],
+                    course_id=r['course_id'],
+                    date=r['date'],
+                    status=_col(r, 'status', avail, 'present'),
                 )
-                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             CourseAttendance.objects.bulk_create(objs, ignore_conflicts=True)
             results.append(('حضور الدورات', len(objs)))
 
             # ── 11. CourseTeacherAttendance ────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, teacher_id, course_id, date, status, recorded_at FROM halaqat_courseteacherattendance'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_courseteacherattendance')
             objs = []
             for r in rows:
                 obj = CourseTeacherAttendance(
-                    id=r['id'], teacher_id=r['teacher_id'], course_id=r['course_id'],
-                    date=r['date'], status=r['status'],
+                    id=r['id'],
+                    teacher_id=r['teacher_id'],
+                    course_id=r['course_id'],
+                    date=r['date'],
+                    status=_col(r, 'status', avail, 'present'),
                 )
-                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             CourseTeacherAttendance.objects.bulk_create(objs, ignore_conflicts=True)
             results.append(('حضور أساتذة الدورات', len(objs)))
 
             # ── 12. TeacherDailyAttendance ─────────────────────────
-            rows = list(conn.execute(
-                'SELECT id, teacher_id, date, status, recorded_at FROM halaqat_teacherdailyattendance'
-            ))
+            avail, rows = _sqlite_read(conn, 'halaqat_teacherdailyattendance')
             objs = []
             for r in rows:
                 obj = TeacherDailyAttendance(
-                    id=r['id'], teacher_id=r['teacher_id'],
-                    date=r['date'], status=r['status'],
+                    id=r['id'],
+                    teacher_id=r['teacher_id'],
+                    date=r['date'],
+                    status=_col(r, 'status', avail, 'present'),
                 )
-                obj.recorded_at = r['recorded_at'] or timezone.now().isoformat()
+                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
                 objs.append(obj)
             TeacherDailyAttendance.objects.bulk_create(objs, ignore_conflicts=True)
             results.append(('التفقد العام', len(objs)))
