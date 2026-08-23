@@ -260,7 +260,7 @@
 
     {# تأكيد + زر الترحيل #}
     {% if total_sqlite > 0 %}
-    <form id="migrate-form" method="post" onsubmit="runMigration(event)">
+    <form method="post" id="migrate-form">
       {% csrf_token %}
       <label class="confirm-box" for="confirm-check">
         <input type="checkbox" id="confirm-check"
@@ -268,70 +268,12 @@
         <span>أفهم أن هذه العملية ستمسح جميع بيانات PostgreSQL الحالية وتستبدلها ببيانات SQLite، وأريد المتابعة.</span>
       </label>
       <div class="action-row">
-        <button type="submit" id="migrate-btn" class="btn-migrate" disabled
-                data-load-text="جاري الترحيل…">
+        <button type="submit" id="migrate-btn" class="btn-migrate" disabled>
           🔄 ترحيل البيانات الآن
         </button>
         <a href="{% url 'admin_panel' %}" class="btn-back">← إلغاء</a>
       </div>
     </form>
-
-    {# منطقة النتائج الديناميكية (تظهر بعد نجاح الترحيل بدون reload) #}
-    <div id="migrate-result" style="display:none;"></div>
-
-    <script>
-    async function runMigration(e) {
-      e.preventDefault();
-      showOverlay('🔄 جاري ترحيل البيانات… قد يستغرق ذلك لحظات');
-
-      try {
-        const form = document.getElementById('migrate-form');
-        const body = new FormData(form);
-        const res  = await fetch(form.action || window.location.href, {
-          method:  'POST',
-          body:    body,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-
-        const data = await res.json();
-        hideOverlay();
-
-        if (data.ok) {
-          // بناء جدول النتائج
-          let rows = data.results.map(([lbl, cnt]) =>
-            `<tr><td>${lbl}</td><td>${cnt} سجل</td></tr>`
-          ).join('');
-          document.getElementById('migrate-result').innerHTML = `
-            <div class="results-card">
-              <h3>✅ اكتمل الترحيل بنجاح</h3>
-              <table class="results-table">${rows}</table>
-              <div class="total-count">الإجمالي: ${data.total} سجل</div>
-            </div>
-            <div class="action-row">
-              <a href="{% url 'circles_list' %}" class="btn-primary"
-                 style="text-decoration:none; display:inline-block;">
-                🏠 الذهاب إلى الحلقات
-              </a>
-              <a href="{% url 'migrate_sqlite_to_postgres' %}" class="btn-back">← تحديث الأرقام</a>
-            </div>`;
-          document.getElementById('migrate-result').style.display = 'block';
-          document.getElementById('migrate-form').style.display  = 'none';
-          showToast('✅ تم الترحيل بنجاح!', 'success', 5000);
-        } else {
-          showToast(data.error ?? '❌ فشل الترحيل', 'error', 7000);
-          // إعادة تفعيل الزر
-          document.getElementById('migrate-btn').disabled = false;
-          document.getElementById('confirm-check').checked = false;
-          document.getElementById('migrate-btn').disabled = true;
-        }
-
-      } catch(err) {
-        hideOverlay();
-        showToast('❌ خطأ في الاتصال بالخادم', 'error', 6000);
-      }
-    }
-    </script>
-
     {% else %}
     <div class="nofile-card">
       <div class="icon">📭</div>

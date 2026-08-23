@@ -1006,21 +1006,14 @@ def send_all_data_telegram(request):
         f'👨‍🏫 الأساتذة: {Teacher.objects.count()}'
     )
     export_filename = f'masjid_taha_{today_str}.xlsx'
-    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
     ok = send_telegram_document_bytes(excel_buffer.getvalue(), export_filename, caption=caption)
 
     if ok:
-        msg = '✅ تم إرسال ملف البيانات الكاملة إلى تلغرام بنجاح.'
-        _log_admin_action(request, '📤 إرسال بيانات Excel كاملة إلى تلغرام')
-        if is_ajax:
-            return JsonResponse({'ok': True, 'msg': msg})
-        messages.success(request, msg)
+        messages.success(request, '✅ تم إرسال ملف البيانات الكاملة إلى تلغرام بنجاح.')
+        _log_admin_action(request, f'📤 إرسال بيانات Excel كاملة إلى تلغرام')
     else:
-        msg = '❌ فشل الإرسال إلى تلغرام. تحقق من إعدادات البوت والاتصال بالإنترنت.'
-        if is_ajax:
-            return JsonResponse({'ok': False, 'msg': msg})
-        messages.error(request, msg)
+        messages.error(request, '❌ فشل الإرسال إلى تلغرام. تحقق من إعدادات البوت والاتصال بالإنترنت.')
 
     return redirect('admin_panel')
 
@@ -1377,25 +1370,13 @@ def migrate_sqlite_to_postgres(request):
 
     except Exception as exc:
         conn.close()
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        err_msg = f'❌ فشل الترحيل — تم التراجع عن كل التغييرات: {exc}'
+        messages.error(request, f'❌ فشل الترحيل — تم التراجع عن كل التغييرات: {exc}')
         _log_admin_action(request, f'❌ فشل ترحيل SQLite→PostgreSQL: {exc}')
-        if is_ajax:
-            return JsonResponse({'ok': False, 'error': err_msg}, status=400)
-        messages.error(request, err_msg)
         return redirect('migrate_sqlite_to_postgres')
 
     conn.close()
     total = sum(c for _, c in results)
     _log_admin_action(request, f'🔄 ترحيل SQLite→PostgreSQL اكتمل ({total} سجل)')
-
-    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-    if is_ajax:
-        return JsonResponse({
-            'ok': True,
-            'results': results,
-            'total': total,
-        })
 
     return render(request, 'halaqat/migrate_sqlite.html', {
         'active_nav': 'admin',
