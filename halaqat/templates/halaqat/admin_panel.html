@@ -7,33 +7,11 @@
   <div class="desc">إضافة حلقات، أساتذة وطلاب جدد</div>
 </div>
 
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
-
-  <div class="panel" style="border-right:4px solid #2d9e5f; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-    <div>
-      <div style="font-size:14px; font-weight:700; color:#1a1a1a; margin-bottom:4px;">📤 نسخة احتياطية إلى تلغرام</div>
-      <div style="font-size:11px; color:#9c8a71;">Excel يحوي الحلقات والطلاب والحضور والدورات</div>
-    </div>
-    <a href="{% url 'send_all_data_telegram' %}"
-       onclick="return confirm('سيتم إرسال ملف Excel بجميع بيانات المسجد إلى تلغرام.\nهل أنت متأكد؟');"
-       class="btn-primary"
-       style="text-decoration:none; display:inline-block; white-space:nowrap; font-size:13px;">
-      📤 إرسال
-    </a>
-  </div>
-
-  <div class="panel" style="border-right:4px solid #c0392b; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-    <div>
-      <div style="font-size:14px; font-weight:700; color:#1a1a1a; margin-bottom:4px;">🔄 ترحيل قاعدة البيانات</div>
-      <div style="font-size:11px; color:#9c8a71;">نقل البيانات من SQLite إلى PostgreSQL</div>
-    </div>
-    <a href="{% url 'migrate_sqlite_to_postgres' %}"
-       class="btn-primary"
-       style="text-decoration:none; display:inline-block; white-space:nowrap; font-size:13px; background:#c0392b;">
-      🔄 ترحيل
-    </a>
-  </div>
-
+<div style="margin-bottom:20px; text-align:left;">
+  <a href="{% url 'developer_page' %}"
+     style="font-size:12px; color:#9c8a71; text-decoration:none;">
+    🛠 أدوات المطور (تلغرام / ترحيل قاعدة البيانات)
+  </a>
 </div>
 
 <div class="admin-grid">

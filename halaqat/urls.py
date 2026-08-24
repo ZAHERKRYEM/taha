@@ -37,4 +37,7 @@ urlpatterns = [
 
     # ── ترحيل البيانات من SQLite إلى PostgreSQL ──
     path('migrate-db/', views.migrate_sqlite_to_postgres, name='migrate_sqlite_to_postgres'),
+
+    # ── صفحة المطور ──
+    path('developer/', views.developer_page, name='developer_page'),
 ]
