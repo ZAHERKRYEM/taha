@@ -1288,10 +1288,9 @@ def migrate_sqlite_to_postgres(request):
                 # joined_at هو auto_now_add — نتجاوزه بتعيينه مباشرة
                 joined = _parse_date(row[5])
                 if joined:
-                    from datetime import datetime
-                    import pytz
+                    from datetime import datetime, timezone as dt_timezone
                     obj.joined_at = datetime(joined.year, joined.month, joined.day,
-                                            tzinfo=pytz.utc)
+                                            tzinfo=dt_timezone.utc)
                 objs.append(obj)
                 meta.append((name, circle_name))
             Student.objects.bulk_create(objs)
