@@ -1138,71 +1138,92 @@ def _reset_pg_sequences():
 @login_required
 def migrate_sqlite_to_postgres(request):
     """
-    GET  → معاينة: يُقارن بين عدد السجلات في SQLite و PostgreSQL.
-    POST → تنفيذ: يمسح PostgreSQL ثم يستورد كل البيانات من SQLite مع الحفاظ على IDs الأصلية.
+    GET  → صفحة رفع ملف Excel مع إحصائيات PostgreSQL الحالية.
+    POST → قراءة ملف Excel المرفوع وترحيل بياناته إلى PostgreSQL.
+    ملف Excel هو نفس النسخة الاحتياطية التي تُرسَل إلى تلغرام (6 أوراق بالأسماء العربية).
     """
-    import sqlite3 as sqlite3_lib
-    import os
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
-    sqlite_path = os.path.join(settings.BASE_DIR, 'db.sqlite3')
+    # ── بناء خريطة عكسية: قيمة display → قيمة DB (من choices الموديل) ──
+    _status_map = {
+        display: value
+        for value, display in Attendance._meta.get_field('status').choices
+    }
+
+    def _status(arabic):
+        return _status_map.get(str(arabic or '').strip(), 'present')
+
+    def _clean(val):
+        """يحوّل '—' أو None أو قيمة فارغة إلى نص فارغ."""
+        s = str(val).strip() if val is not None else ''
+        return '' if s in ('—', 'None', '') else s
+
+    def _parse_date(val):
+        """يعيد date من datetime أو string ISO."""
+        from datetime import date as date_cls, datetime as dt_cls
+        if isinstance(val, dt_cls):
+            return val.date()
+        if isinstance(val, date_cls):
+            return val
+        s = str(val).strip()[:10]
+        try:
+            return date_cls.fromisoformat(s)
+        except ValueError:
+            return None
 
     # ────────────────────────────────────────────────────────
-    #  GET: صفحة المعاينة والتأكيد
+    #  GET: إحصائيات PostgreSQL الحالية + نموذج رفع الملف
     # ────────────────────────────────────────────────────────
     if request.method == 'GET':
-        file_exists = os.path.exists(sqlite_path)
-        preview = []
-        total_sqlite = total_pg = 0
-
-        if file_exists:
-            conn = sqlite3_lib.connect(sqlite_path)
-            pg_counts = {
-                'halaqat_teacher':                  Teacher.objects.count(),
-                'halaqat_circle':                   Circle.objects.count(),
-                'halaqat_student':                  Student.objects.count(),
-                'halaqat_attendance':               Attendance.objects.count(),
-                'halaqat_teacherattendance':        TeacherAttendance.objects.count(),
-                'halaqat_course':                   Course.objects.count(),
-                'halaqat_course_teachers':          Course.teachers.through.objects.count(),
-                'halaqat_course_students':          Course.students.through.objects.count(),
-                'halaqat_courseattendance':         CourseAttendance.objects.count(),
-                'halaqat_courseteacherattendance':  CourseTeacherAttendance.objects.count(),
-                'halaqat_teacherdailyattendance':   TeacherDailyAttendance.objects.count(),
-            }
-            for label, table, _ in _SQLITE_TABLES:
-                sq = _sqlite_count(conn, table)
-                pg = pg_counts.get(table, 0)
-                preview.append({'label': label, 'sqlite': sq, 'pg': pg, 'match': sq == pg})
-                total_sqlite += sq
-                total_pg += pg
-            conn.close()
-
+        pg_stats = [
+            ('الأساتذة',              Teacher.objects.count()),
+            ('الحلقات',               Circle.objects.count()),
+            ('الطلاب',                Student.objects.count()),
+            ('حضور الطلاب',           Attendance.objects.count()),
+            ('حضور الأساتذة',         TeacherAttendance.objects.count()),
+            ('الدورات',               Course.objects.count()),
+            ('حضور الدورات',          CourseAttendance.objects.count()),
+            ('حضور أساتذة الدورات',   CourseTeacherAttendance.objects.count()),
+        ]
         return render(request, 'halaqat/migrate_sqlite.html', {
-            'active_nav': 'admin',
-            'sqlite_path': sqlite_path,
-            'file_exists': file_exists,
-            'preview': preview,
-            'total_sqlite': total_sqlite,
-            'total_pg': total_pg,
+            'active_nav': 'developer',
+            'pg_stats': pg_stats,
+            'total_pg': sum(c for _, c in pg_stats),
         })
 
     # ────────────────────────────────────────────────────────
-    #  POST: تنفيذ الترحيل
+    #  POST: قراءة Excel وترحيل البيانات
     # ────────────────────────────────────────────────────────
-    import sqlite3 as sqlite3_lib
-
-    if not os.path.exists(sqlite_path):
-        messages.error(request, f'❌ ملف db.sqlite3 غير موجود في: {sqlite_path}')
+    excel_file = request.FILES.get('excel_file')
+    if not excel_file:
+        err = '❌ لم يتم رفع أي ملف — اختر ملف Excel أولاً.'
+        if is_ajax:
+            return JsonResponse({'ok': False, 'error': err}, status=400)
+        messages.error(request, err)
         return redirect('migrate_sqlite_to_postgres')
 
-    conn = sqlite3_lib.connect(sqlite_path)
-    conn.row_factory = sqlite3_lib.Row
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(excel_file, read_only=True, data_only=True)
+    except Exception as exc:
+        err = f'❌ تعذّر قراءة ملف Excel: {exc}'
+        if is_ajax:
+            return JsonResponse({'ok': False, 'error': err}, status=400)
+        messages.error(request, err)
+        return redirect('migrate_sqlite_to_postgres')
+
+    def _sheet(name):
+        """يعيد صفوف الورقة (بدون صف العناوين)، أو [] إذا لم توجد."""
+        if name not in wb.sheetnames:
+            return []
+        return list(wb[name].iter_rows(min_row=2, values_only=True))
+
     results = []
 
     try:
         with transaction.atomic():
 
-            # ── 1. مسح PostgreSQL بالترتيب العكسي لـ FK ──────────
+            # ── 1. مسح PostgreSQL بالترتيب الآمن ──────────────────
             TeacherDailyAttendance.objects.all().delete()
             CourseTeacherAttendance.objects.all().delete()
             CourseAttendance.objects.all().delete()
@@ -1213,193 +1234,198 @@ def migrate_sqlite_to_postgres(request):
             Circle.objects.all().delete()
             Teacher.objects.all().delete()
 
-            # ── 2. Teacher ─────────────────────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_teacher')
-            Teacher.objects.bulk_create([
-                Teacher(
-                    id=r['id'],
-                    name=r['name'],
-                    phone=_col(r, 'phone', avail, _field_default(Teacher, 'phone')),
-                ) for r in rows
-            ])
-            results.append(('الأساتذة', len(rows)))
-
-            # ── 3. Circle ──────────────────────────────────────────
-            # مثال: display_order قد يغيب في SQLite القديم → يأخذ قيمته الافتراضية تلقائياً
-            avail, rows = _sqlite_read(conn, 'halaqat_circle')
+            # ── 2. الأساتذة ────────────────────────────────────────
+            # أعمدة: م | اسم الأستاذ | رقم الهاتف
+            teacher_map = {}   # name → Teacher instance
             objs = []
-            for r in rows:
-                obj = Circle(
-                    id=r['id'],
-                    name=r['name'],
-                    teacher_id=_col(r, 'teacher_id', avail),
-                    description=_col(r, 'description', avail, _field_default(Circle, 'description')),
-                    display_order=_col(r, 'display_order', avail, _field_default(Circle, 'display_order')),
-                )
-                obj.created_at = _col(r, 'created_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
+            for row in _sheet('الأساتذة'):
+                if not row[1]:
+                    continue
+                name = str(row[1]).strip()
+                objs.append(Teacher(name=name, phone=_clean(row[2])))
+            Teacher.objects.bulk_create(objs)
+            for t in Teacher.objects.all():
+                teacher_map[t.name] = t
+            results.append(('الأساتذة', len(teacher_map)))
+
+            # ── 3. الحلقات ─────────────────────────────────────────
+            # أعمدة: م | اسم الحلقة | الأستاذ | عدد الطلاب | الوصف | ترتيب العرض
+            circle_map = {}    # name → Circle instance
+            objs = []
+            for row in _sheet('الحلقات'):
+                if not row[1]:
+                    continue
+                name        = str(row[1]).strip()
+                teacher     = teacher_map.get(str(row[2]).strip()) if row[2] else None
+                description = _clean(row[4])
+                try:
+                    order = int(row[5] or 0)
+                except (ValueError, TypeError):
+                    order = 0
+                objs.append(Circle(name=name, teacher=teacher,
+                                   description=description, display_order=order))
             Circle.objects.bulk_create(objs)
-            results.append(('الحلقات', len(objs)))
+            for c in Circle.objects.select_related('teacher'):
+                circle_map[c.name] = c
+            results.append(('الحلقات', len(circle_map)))
 
-            # ── 4. Student ─────────────────────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_student')
+            # ── 4. الطلاب ──────────────────────────────────────────
+            # أعمدة: م | اسم الطالب | الحلقة | رقم الهاتف | ملاحظات | تاريخ الانضمام
+            student_map        = {}   # (name, circle_name) → Student
+            student_by_name    = {}   # name → Student  (للبحث السريع في حضور الدورات)
             objs = []
-            for r in rows:
-                obj = Student(
-                    id=r['id'],
-                    name=r['name'],
-                    circle_id=r['circle_id'],
-                    phone=_col(r, 'phone', avail, _field_default(Student, 'phone')),
-                    notes=_col(r, 'notes', avail, _field_default(Student, 'notes')),
-                )
-                obj.joined_at = _col(r, 'joined_at', avail) or timezone.now().isoformat()
+            meta = []   # (name, circle_name) لكل كائن بنفس الترتيب
+            for row in _sheet('الطلاب'):
+                if not row[1]:
+                    continue
+                name        = str(row[1]).strip()
+                circle_name = str(row[2]).strip() if row[2] else ''
+                circle      = circle_map.get(circle_name)
+                if not circle:
+                    continue
+                obj = Student(name=name, circle=circle,
+                              phone=_clean(row[3]), notes=_clean(row[4]))
+                # joined_at هو auto_now_add — نتجاوزه بتعيينه مباشرة
+                joined = _parse_date(row[5])
+                if joined:
+                    from datetime import datetime
+                    import pytz
+                    obj.joined_at = datetime(joined.year, joined.month, joined.day,
+                                            tzinfo=pytz.utc)
                 objs.append(obj)
+                meta.append((name, circle_name))
             Student.objects.bulk_create(objs)
-            results.append(('الطلاب', len(objs)))
+            for s in Student.objects.select_related('circle'):
+                key = (s.name, s.circle.name)
+                student_map[key] = s
+                student_by_name.setdefault(s.name, s)   # أول تطابق
+            results.append(('الطلاب', len(student_map)))
 
-            # ── 5. Attendance ──────────────────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_attendance')
-            objs = []
-            for r in rows:
-                obj = Attendance(
-                    id=r['id'],
-                    student_id=r['student_id'],
-                    circle_id=r['circle_id'],
-                    date=r['date'],
-                    status=_col(r, 'status', avail, 'present'),
-                )
-                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
-            Attendance.objects.bulk_create(objs, ignore_conflicts=True)
-            results.append(('حضور الطلاب', len(objs)))
+            # ── 5. حضور الحلقات ────────────────────────────────────
+            # أعمدة: التاريخ | الحلقة | النوع | الاسم | الحالة
+            # النوع: 'طالب' أو 'أستاذ'
+            att_objs   = []
+            t_att_objs = []
+            for row in _sheet('حضور الحلقات'):
+                date_val    = _parse_date(row[0])
+                circle_name = str(row[1]).strip() if row[1] else ''
+                kind        = str(row[2]).strip() if row[2] else ''
+                name        = str(row[3]).strip() if row[3] else ''
+                status      = _status(row[4])
+                circle      = circle_map.get(circle_name)
+                if not date_val or not name or not circle:
+                    continue
+                if kind == 'طالب':
+                    student = student_map.get((name, circle_name))
+                    if student:
+                        att_objs.append(Attendance(
+                            student=student, circle=circle,
+                            date=date_val, status=status))
+                elif kind == 'أستاذ':
+                    teacher = teacher_map.get(name)
+                    if teacher:
+                        t_att_objs.append(TeacherAttendance(
+                            teacher=teacher, circle=circle,
+                            date=date_val, status=status))
+            Attendance.objects.bulk_create(att_objs, ignore_conflicts=True)
+            TeacherAttendance.objects.bulk_create(t_att_objs, ignore_conflicts=True)
+            results.append(('حضور الطلاب في الحلقات',    len(att_objs)))
+            results.append(('حضور الأساتذة في الحلقات',  len(t_att_objs)))
 
-            # ── 6. TeacherAttendance ───────────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_teacherattendance')
+            # ── 6. الدورات ─────────────────────────────────────────
+            # أعمدة: م | اسم الدورة | الأساتذة | عدد الطلاب | الوصف
+            # الأساتذة: أسماء مفصولة بـ '،'
+            course_map          = {}    # name → Course
+            course_teacher_names = {}   # course_name → [teacher_names]
             objs = []
-            for r in rows:
-                obj = TeacherAttendance(
-                    id=r['id'],
-                    teacher_id=r['teacher_id'],
-                    circle_id=r['circle_id'],
-                    date=r['date'],
-                    status=_col(r, 'status', avail, 'present'),
-                )
-                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
-            TeacherAttendance.objects.bulk_create(objs, ignore_conflicts=True)
-            results.append(('حضور الأساتذة', len(objs)))
-
-            # ── 7. Course ──────────────────────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_course')
-            objs = []
-            for r in rows:
-                obj = Course(
-                    id=r['id'],
-                    name=r['name'],
-                    description=_col(r, 'description', avail, _field_default(Course, 'description')),
-                )
-                obj.created_at = _col(r, 'created_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
+            for row in _sheet('الدورات'):
+                if not row[1]:
+                    continue
+                name        = str(row[1]).strip()
+                teachers_str = str(row[2] or '').strip()
+                description = _clean(row[4])
+                t_names = [t.strip() for t in teachers_str.split('،')
+                           if t.strip() and t.strip() != '—']
+                objs.append(Course(name=name, description=description))
+                course_teacher_names[name] = t_names
             Course.objects.bulk_create(objs)
-            results.append(('الدورات', len(objs)))
+            for c in Course.objects.all():
+                course_map[c.name] = c
+                for t_name in course_teacher_names.get(c.name, []):
+                    t = teacher_map.get(t_name)
+                    if t:
+                        c.teachers.add(t)
+            results.append(('الدورات', len(course_map)))
 
-            # ── 8. Course.teachers M2M ─────────────────────────────
-            avail_m, rows_m = _sqlite_read(conn, 'halaqat_course_teachers')
-            if rows_m:
+            # ── 7. حضور الدورات ────────────────────────────────────
+            # أعمدة: التاريخ | الدورة | النوع | الاسم | الحالة
+            ca_objs    = []
+            cta_objs   = []
+            enrolled   = set()   # (course_id, student_id) لاستنتاج M2M
+            for row in _sheet('حضور الدورات'):
+                date_val    = _parse_date(row[0])
+                course_name = str(row[1]).strip() if row[1] else ''
+                kind        = str(row[2]).strip() if row[2] else ''
+                name        = str(row[3]).strip() if row[3] else ''
+                status      = _status(row[4])
+                course      = course_map.get(course_name)
+                if not date_val or not name or not course:
+                    continue
+                if kind == 'طالب':
+                    student = student_by_name.get(name)
+                    if student:
+                        ca_objs.append(CourseAttendance(
+                            student=student, course=course,
+                            date=date_val, status=status))
+                        enrolled.add((course.id, student.id))
+                elif kind == 'أستاذ':
+                    teacher = teacher_map.get(name)
+                    if teacher:
+                        cta_objs.append(CourseTeacherAttendance(
+                            teacher=teacher, course=course,
+                            date=date_val, status=status))
+            CourseAttendance.objects.bulk_create(ca_objs, ignore_conflicts=True)
+            CourseTeacherAttendance.objects.bulk_create(cta_objs, ignore_conflicts=True)
+            results.append(('حضور الدورات', len(ca_objs) + len(cta_objs)))
+
+            # ── 8. ربط طلاب الدورات M2M ────────────────────────────
+            # (مستنتجة من سجلات الحضور — الطلاب الذين لا توجد لهم سجلات حضور لن يُضافوا)
+            if enrolled:
                 from django.db import connection as pg_conn
+                engine = pg_conn.settings_dict.get('ENGINE', '')
                 with pg_conn.cursor() as cur:
-                    cur.executemany(
-                        'INSERT INTO halaqat_course_teachers (course_id, teacher_id) VALUES (%s, %s)',
-                        [(r['course_id'], r['teacher_id']) for r in rows_m]
-                    )
-            results.append(('أساتذة الدورات (M2M)', len(rows_m)))
-
-            # ── 9. Course.students M2M ─────────────────────────────
-            avail_m, rows_m = _sqlite_read(conn, 'halaqat_course_students')
-            if rows_m:
-                from django.db import connection as pg_conn
-                with pg_conn.cursor() as cur:
-                    cur.executemany(
-                        'INSERT INTO halaqat_course_students (course_id, student_id) VALUES (%s, %s)',
-                        [(r['course_id'], r['student_id']) for r in rows_m]
-                    )
-            results.append(('طلاب الدورات (M2M)', len(rows_m)))
-
-            # ── 10. CourseAttendance ───────────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_courseattendance')
-            objs = []
-            for r in rows:
-                obj = CourseAttendance(
-                    id=r['id'],
-                    student_id=r['student_id'],
-                    course_id=r['course_id'],
-                    date=r['date'],
-                    status=_col(r, 'status', avail, 'present'),
-                )
-                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
-            CourseAttendance.objects.bulk_create(objs, ignore_conflicts=True)
-            results.append(('حضور الدورات', len(objs)))
-
-            # ── 11. CourseTeacherAttendance ────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_courseteacherattendance')
-            objs = []
-            for r in rows:
-                obj = CourseTeacherAttendance(
-                    id=r['id'],
-                    teacher_id=r['teacher_id'],
-                    course_id=r['course_id'],
-                    date=r['date'],
-                    status=_col(r, 'status', avail, 'present'),
-                )
-                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
-            CourseTeacherAttendance.objects.bulk_create(objs, ignore_conflicts=True)
-            results.append(('حضور أساتذة الدورات', len(objs)))
-
-            # ── 12. TeacherDailyAttendance ─────────────────────────
-            avail, rows = _sqlite_read(conn, 'halaqat_teacherdailyattendance')
-            objs = []
-            for r in rows:
-                obj = TeacherDailyAttendance(
-                    id=r['id'],
-                    teacher_id=r['teacher_id'],
-                    date=r['date'],
-                    status=_col(r, 'status', avail, 'present'),
-                )
-                obj.recorded_at = _col(r, 'recorded_at', avail) or timezone.now().isoformat()
-                objs.append(obj)
-            TeacherDailyAttendance.objects.bulk_create(objs, ignore_conflicts=True)
-            results.append(('التفقد العام', len(objs)))
-
-            # ── 13. إعادة ضبط sequences PostgreSQL ─────────────────
-            _reset_pg_sequences()
+                    if 'postgresql' in engine:
+                        cur.executemany(
+                            'INSERT INTO halaqat_course_students (course_id, student_id)'
+                            ' VALUES (%s, %s) ON CONFLICT DO NOTHING',
+                            list(enrolled)
+                        )
+                    else:   # SQLite للاختبار
+                        cur.executemany(
+                            'INSERT OR IGNORE INTO halaqat_course_students (course_id, student_id)'
+                            ' VALUES (?, ?)',
+                            list(enrolled)
+                        )
+            results.append(('طلاب الدورات (مستنتجة)', len(enrolled)))
 
     except Exception as exc:
-        conn.close()
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        err_msg = f'❌ فشل الترحيل — تم التراجع عن كل التغييرات: {exc}'
-        _log_admin_action(request, f'❌ فشل ترحيل SQLite→PostgreSQL: {exc}')
+        import traceback
+        tb = traceback.format_exc()
+        err = f'❌ فشل الترحيل — تم التراجع عن كل التغييرات:\n{exc}'
+        _log_admin_action(request, f'❌ فشل ترحيل Excel→PostgreSQL: {exc}')
         if is_ajax:
-            return JsonResponse({'ok': False, 'error': err_msg}, status=400)
-        messages.error(request, err_msg)
+            return JsonResponse({'ok': False, 'error': str(err)}, status=400)
+        messages.error(request, err)
         return redirect('migrate_sqlite_to_postgres')
 
-    conn.close()
     total = sum(c for _, c in results)
-    _log_admin_action(request, f'🔄 ترحيل SQLite→PostgreSQL اكتمل ({total} سجل)')
+    _log_admin_action(request, f'🔄 ترحيل Excel→PostgreSQL اكتمل ({total} سجل)')
 
-    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     if is_ajax:
-        return JsonResponse({
-            'ok': True,
-            'results': results,
-            'total': total,
-        })
+        return JsonResponse({'ok': True, 'results': results, 'total': total})
 
     return render(request, 'halaqat/migrate_sqlite.html', {
-        'active_nav': 'admin',
-        'sqlite_path': sqlite_path,
+        'active_nav': 'developer',
         'migration_done': True,
         'results': results,
         'total': total,
