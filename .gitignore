@@ -1,0 +1,42 @@
+# ── أسرار وبيانات حساسة (لا ترفعها أبداً) ───────────────
+.env
+.env.local
+.env.production
+telegram_secrets.py
+whatsapp_secrets.py
+*_secrets.py
+
+# ── قواعد البيانات المحلية ───────────────────────────────
+*.sqlite3
+db.sqlite3
+
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+
+# ── ملفات Django ─────────────────────────────────────────
+staticfiles/
+media/
+*.log
+
+# ── بيئات افتراضية ───────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ── أدوات التطوير ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

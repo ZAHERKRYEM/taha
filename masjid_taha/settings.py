@@ -1,21 +1,80 @@
 """
 إعدادات مشروع نظام إدارة حلقات مسجد طه
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+جميع البيانات الحساسة (كلمات المرور، التوكنات، المفاتيح) تُقرأ حصراً
+من متغيرات البيئة — لا يوجد أي سر مكتوب بشكل مباشر في هذا الملف.
+
+على Render:  Dashboard → Service → Environment → Add Environment Variable
+للتطوير المحلي: انسخ .env.example إلى .env واملأ القيم
 """
 import os
 from pathlib import Path
 import dj_database_url
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# ⚠️ غيّر هذا المفتاح قبل النشر الفعلي على الإنترنت
-SECRET_KEY = 'django-insecure-CHANGE-THIS-KEY-BEFORE-PRODUCTION-1234567890'
+# ══════════════════════════════════════════════════════════════
+#  الإعدادات الأساسية  (كلها من متغيرات البيئة)
+# ══════════════════════════════════════════════════════════════
 
-# ⚠️ اجعلها False عند النشر الفعلي، وحدد ALLOWED_HOSTS
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = ['*']
-CSRF_TRUSTED_ORIGINS = [
-    "https://taha-9f3c.onrender.com",
+# مطلوب دائماً — إن غاب في الإنتاج يرفع استثناء واضحاً
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-local-dev-only-change-before-production' if DEBUG else ''
+)
+if not SECRET_KEY:
+    raise RuntimeError(
+        '⚠️ متغير البيئة SECRET_KEY غير مُعيَّن! '
+        'أضفه في لوحة Render أو في ملف .env المحلي.'
+    )
+
+# المضيفون المسموح بهم — فصل بفواصل: "taha.onrender.com,www.taha.com"
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if h.strip()
 ]
+
+# أصول CSRF الموثوقة — مطلوبة لـ HTTPS على Render
+# مثال: "https://taha-9f3c.onrender.com,https://www.yoursite.com"
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+    if o.strip()
+]
+
+# ══════════════════════════════════════════════════════════════
+#  قاعدة البيانات
+#  Render يُعيّن DATABASE_URL تلقائياً عند إضافة PostgreSQL service
+#  للتطوير المحلي: يرجع تلقائياً إلى SQLite
+# ══════════════════════════════════════════════════════════════
+DATABASES = {
+    'default': dj_database_url.config(
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        conn_max_age=600,
+    )
+}
+
+# ══════════════════════════════════════════════════════════════
+#  تلغرام  (نسخ احتياطي + سجل عمليات لوحة التحكم)
+# ══════════════════════════════════════════════════════════════
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID   = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+# فعّل/عطّل إرسال سجل حذف/تعديل لوحة التحكم إلى تلغرام
+TELEGRAM_LOG_ADMIN_ACTIONS = True
+
+# ══════════════════════════════════════════════════════════════
+#  واتساب WAHA
+# ══════════════════════════════════════════════════════════════
+WAHA_RENDER_URL = os.environ.get('WAHA_RENDER_URL', '')
+WAHA_API_KEY    = os.environ.get('WAHA_API_KEY', '')
+
+# ══════════════════════════════════════════════════════════════
+#  إعدادات Django الثابتة
+# ══════════════════════════════════════════════════════════════
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -57,25 +116,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'masjid_taha.wsgi.application'
 
-# قاعدة البيانات - SQLite للتطوير المحلي
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "taha_pi6e",
-        "USER": "taha_pi6e_user",
-        "PASSWORD": "v5uJi8rFYNab82J7bWGJvaKS8uAqc5n4",
-        "HOST": "dpg-d9v14j95efls73dm2pmg-a",
-        "PORT": "5432"
-    
-    }
-}
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -83,38 +123,17 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# اللغة والتوطين - عربي / يمين لليسار
 LANGUAGE_CODE = 'ar'
-TIME_ZONE = 'Asia/Riyadh'  # عدّلها حسب منطقتك الزمنية
+TIME_ZONE     = 'Asia/Riyadh'
 USE_I18N = True
-USE_TZ = True
+USE_TZ   = True
 
-STATIC_URL = 'static/'
+STATIC_URL  = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ---- إعدادات تسجيل الدخول ----
-LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'circles_list'
-LOGOUT_REDIRECT_URL = 'login'
-
-# ---- إعدادات بوت تلغرام (نسخ احتياطي يومي + سجل عمليات لوحة التحكم) ----
-# القيم الفعلية (التوكن الحقيقي) موجودة في ملف telegram_secrets.py المحلي
-# وهو مستثنى من git عمداً حماية للسر. إن لم يكن موجوداً، تُقرأ القيم من
-# متغيرات البيئة كخطة بديلة.
-try:
-    from .telegram_secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-except ImportError:
-    TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-    TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
-
-# فعّل/عطّل إرسال سجل عمليات لوحة التحكم (حذف/تعديل) لتلغرام
-TELEGRAM_LOG_ADMIN_ACTIONS = True
-
-# ---- إعدادات واتساب WAHA ----
-# القيم الفعلية موجودة في ملف whatsapp_secrets.py المحلي أو متغيرات البيئة.
-
-WAHA_RENDER_URL ="https://taha-wa.onrender.com"
-WAHA_API_KEY ="12345678"
+LOGIN_URL            = 'login'
+LOGIN_REDIRECT_URL   = 'circles_list'
+LOGOUT_REDIRECT_URL  = 'login'
