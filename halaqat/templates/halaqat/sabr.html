@@ -1,0 +1,165 @@
+{% extends "halaqat/base.html" %}
+{% block title %}السبر — مسجد طه{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h2>📝 السبر</h2>
+  <div class="desc">اكتب اسم الطالب لتعرف آخر سبر قام به، ثم سجّل سبراً جديداً.</div>
+</div>
+
+<div style="display:none">{% csrf_token %}</div>
+
+<div class="panel sb-search">
+  <input type="text" id="sb-q" placeholder="🔍 اسم الطالب…" autocomplete="off">
+  <div id="sb-results" class="sb-results" hidden></div>
+</div>
+
+<div id="sb-card" hidden>
+  <div class="panel">
+    <div class="sb-head">
+      <div>
+        <div class="sb-name" id="sb-name"></div>
+        <div class="sb-sub" id="sb-circle"></div>
+      </div>
+      <a id="sb-profile" class="qs-btn" style="text-decoration:none">👤 الملف</a>
+    </div>
+
+    <div class="sb-last" id="sb-last"></div>
+
+    <div class="sb-new">
+      <label>تاريخ السبر الجديد
+        <input type="date" id="sb-date" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
+      </label>
+      <button id="sb-add" class="btn-primary" data-load-text="جاري التسجيل…" onclick="addSabr(this)">➕ تسجيل سبر</button>
+    </div>
+    <div class="sb-hint">التاريخ الافتراضي هو اليوم، غيّره إن كان السبر في يوم آخر.</div>
+  </div>
+
+  <div class="panel">
+    <h3>سجل السبر <small id="sb-total" style="color:#9c8a71;font-weight:400"></small></h3>
+    <div id="sb-history"></div>
+  </div>
+</div>
+
+<script>
+const TODAY = "{{ today|date:'Y-m-d' }}";
+let currentId = null, searchTimer = null, searchSeq = 0;
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $ = id => document.getElementById(id);
+
+function agoText(n) {
+  if (n <= 0) return 'اليوم';
+  if (n === 1) return 'أمس';
+  if (n === 2) return 'قبل يومين';
+  if (n <= 10) return `قبل ${n} أيام`;
+  return `قبل ${n} يوماً`;
+}
+
+async function api(url, body) {
+  const opt = { headers: { 'X-Requested-With': 'XMLHttpRequest' } };
+  if (body !== undefined) {
+    opt.method = 'POST';
+    opt.headers['X-CSRFToken'] = getCsrf();
+    opt.body = new URLSearchParams(body);
+  }
+  const res = await fetch(url, opt);
+  const data = await res.json().catch(() => ({ ok: false, error: 'استجابة غير صالحة' }));
+  if (!res.ok || data.ok === false) throw new Error(data.error || 'حدث خطأ');
+  return data;
+}
+
+/* ---- البحث ---- */
+$('sb-q').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = $('sb-q').value.trim();
+  if (!q) { $('sb-results').hidden = true; return; }
+  searchTimer = setTimeout(() => runSearch(q), 200);
+});
+
+async function runSearch(q) {
+  const seq = ++searchSeq;
+  try {
+    const res = await fetch('/search-students/?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (seq !== searchSeq) return;           // تجاهل النتائج القديمة
+    const box = $('sb-results');
+    if (!data.results.length) {
+      box.innerHTML = '<div class="sb-empty">لا يوجد طالب بهذا الاسم</div>';
+    } else {
+      box.innerHTML = data.results.map(r =>
+        `<button type="button" class="sb-item" data-id="${r.id}">${esc(r.name)}<small>${esc(r.circle_name)}</small></button>`
+      ).join('');
+    }
+    box.hidden = false;
+  } catch (e) { /* تجاهل أخطاء الشبكة المؤقتة */ }
+}
+
+$('sb-results').addEventListener('click', e => {
+  const b = e.target.closest('.sb-item');
+  if (!b) return;
+  $('sb-results').hidden = true;
+  $('sb-q').value = b.firstChild.textContent;
+  loadStudent(b.dataset.id);
+});
+
+/* ---- عرض الطالب ---- */
+async function loadStudent(id) {
+  try { render(await api('/sabr/student/' + id + '/')); }
+  catch (e) { showToast('❌ ' + e.message, 'error'); }
+}
+
+function render(d) {
+  currentId = d.student.id;
+  $('sb-card').hidden = false;
+  $('sb-name').textContent = d.student.name;
+  $('sb-circle').textContent = 'حلقة ' + d.student.circle;
+  $('sb-profile').href = '/students/' + d.student.id + '/profile/';
+  $('sb-date').value = TODAY;
+
+  $('sb-last').innerHTML = d.last
+    ? `<span class="sb-last-lbl">آخر سبر</span><b>${esc(d.last.date_display)}</b><span class="sb-ago">${agoText(d.last.days_ago)}</span>`
+    : `<span class="sb-none">لم يُسجَّل له أي سبر بعد</span>`;
+
+  $('sb-total').textContent = d.total > d.history.length ? `(آخر ${d.history.length} من ${d.total})` : (d.total ? `(${d.total})` : '');
+  $('sb-history').innerHTML = d.history.length ? d.history.map(h => `
+    <div class="sb-row" data-id="${h.id}">
+      <input type="date" value="${h.date}" max="${TODAY}">
+      <span class="sb-ago">${agoText(h.days_ago)}</span>
+      <button type="button" class="qs-btn" data-act="save" title="حفظ التاريخ">💾</button>
+      <button type="button" class="qs-btn" data-act="del" title="حذف">🗑</button>
+    </div>`).join('') : '<p style="font-size:13px;color:#9c8a71;margin:0">لا يوجد سجل بعد.</p>';
+}
+
+/* ---- تسجيل / تعديل / حذف ---- */
+async function addSabr(btn) {
+  if (!currentId) return;
+  setBtnLoading(btn, true);
+  try {
+    render(await api('/sabr/student/' + currentId + '/add/', { date: $('sb-date').value }));
+    showToast('✅ تم تسجيل السبر', 'success');
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  finally { setBtnLoading(btn, false); }
+}
+
+$('sb-history').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const row = btn.closest('.sb-row'), id = row.dataset.id;
+  try {
+    if (btn.dataset.act === 'save') {
+      render(await api('/sabr/' + id + '/update/', { date: row.querySelector('input').value }));
+      showToast('✅ تم تعديل التاريخ', 'success');
+    } else {
+      if (!confirm('حذف هذا السبر؟')) return;
+      render(await api('/sabr/' + id + '/delete/', {}));
+      showToast('🗑 تم الحذف', 'info');
+    }
+  } catch (err) { showToast('❌ ' + err.message, 'error'); }
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.sb-search')) $('sb-results').hidden = true;
+});
+</script>
+{% endblock %}

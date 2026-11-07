@@ -285,3 +285,18 @@ class TeacherDailyAttendance(models.Model):
 
     def __str__(self):
         return f'{self.teacher.name} - {self.date} - {self.get_status_display()}'
+
+
+class Sabr(models.Model):
+    """سبر (اختبار) يجريه الطالب — يُسجَّل بتاريخ اليوم افتراضياً ويمكن تغيير التاريخ."""
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='sabrs', verbose_name='الطالب')
+    date = models.DateField('تاريخ السبر', default=timezone.localdate)
+    created_at = models.DateTimeField('وقت التسجيل', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'سبر'
+        verbose_name_plural = 'السبر'
+        ordering = ['-date', '-id']
+
+    def __str__(self):
+        return f'{self.student.name} — {self.date}'

@@ -38,6 +38,20 @@ urlpatterns = [
     # ── ترحيل البيانات من SQLite إلى PostgreSQL ──
     path('migrate-db/', views.migrate_sqlite_to_postgres, name='migrate_sqlite_to_postgres'),
 
+    # ── إحصائيات الطالب السريعة (آخر 4 أسابيع) ──
+    path('students/<int:student_id>/quick-stats/', views.student_quick_stats, name='student_quick_stats'),
+
+    # ── السبر ──
+    path('sabr/', views.sabr_page, name='sabr_page'),
+    path('sabr/student/<int:student_id>/', views.sabr_student_info, name='sabr_student_info'),
+    path('sabr/student/<int:student_id>/add/', views.sabr_add, name='sabr_add'),
+    path('sabr/<int:sabr_id>/update/', views.sabr_update, name='sabr_update'),
+    path('sabr/<int:sabr_id>/delete/', views.sabr_delete, name='sabr_delete'),
+
+    # ── الإحصائيات ──
+    path('stats/', views.stats_page, name='stats_page'),
+    path('stats/pdf/', views.export_stats_pdf, name='export_stats_pdf'),
+
     # ── صفحة المطور ──
     path('developer/', views.developer_page, name='developer_page'),
 ]

@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#B17F4A">
   <link rel="icon" href="{% static 'halaqat/images/logo.svg' %}" type="image/svg+xml">
-  <link rel="stylesheet" href="{% static 'halaqat/css/style.css' %}?v=2">
+  <link rel="stylesheet" href="{% static 'halaqat/css/style.css' %}?v=6">
 </head>
 <body>
 <div class="arch-pattern"></div>
@@ -29,6 +29,8 @@
     <a href="{% url 'courses_list' %}" class="{% if active_nav == 'courses' %}active{% endif %}">الدورات</a>
     <a href="{% url 'teachers_list' %}" class="{% if active_nav == 'teachers' %}active{% endif %}">الأساتذة</a>
     <a href="{% url 'absentees_list' %}" class="{% if active_nav == 'absentees' %}active{% endif %}">الغائبون</a>
+    <a href="{% url 'stats_page' %}" class="{% if active_nav == 'stats' %}active{% endif %}">📊 الإحصائيات</a>
+    <a href="{% url 'sabr_page' %}" class="{% if active_nav == 'sabr' %}active{% endif %}">📝 السبر</a>
     <a href="{% url 'admin_panel' %}" class="{% if active_nav == 'admin' %}active{% endif %}">لوحة التحكم</a>
     <a href="{% url 'developer_page' %}" class="{% if active_nav == 'developer' %}active{% endif %}">🛠 المطور</a>
   </nav>
@@ -68,6 +70,12 @@
   <a href="{% url 'absentees_list' %}" class="{% if active_nav == 'absentees' %}active{% endif %}">
     <span class="ic">🚫</span> الغائبون
   </a>
+  <a href="{% url 'stats_page' %}" class="{% if active_nav == 'stats' %}active{% endif %}">
+    <span class="ic">📊</span> إحصائيات
+  </a>
+  <a href="{% url 'sabr_page' %}" class="{% if active_nav == 'sabr' %}active{% endif %}">
+    <span class="ic">📝</span> السبر
+  </a>
   <a href="{% url 'admin_panel' %}" class="{% if active_nav == 'admin' %}active{% endif %}">
     <span class="ic">⚙️</span> لوحة التحكم
   </a>
@@ -76,6 +84,30 @@
   </a>
 </nav>
 {% endif %}
+
+<div class="qs-overlay" id="qs-overlay" onclick="if(event.target===this)closeQuickStats()">
+  <div class="qs-box"><button class="qs-close" onclick="closeQuickStats()">✕</button><div id="qs-body"></div></div>
+</div>
+<script>
+async function openQuickStats(id){
+  const ov=document.getElementById('qs-overlay'), body=document.getElementById('qs-body');
+  body.innerHTML='<p style="text-align:center;padding:24px">جاري التحميل…</p>'; ov.classList.add('open');
+  try{
+    const r=await fetch('/students/'+id+'/quick-stats/',{headers:{'X-Requested-With':'XMLHttpRequest'}});
+    if(!r.ok) throw 0; body.innerHTML=await r.text(); addHijriTitles(body);
+  }catch(e){ body.innerHTML='<p style="text-align:center;padding:24px">❌ تعذّر التحميل</p>'; }
+}
+function closeQuickStats(){document.getElementById('qs-overlay').classList.remove('open');}
+function addHijriTitles(root){
+  try{
+    const f=new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    (root||document).querySelectorAll('.att-grid .dc[data-date]').forEach(el=>{
+      const d=new Date(el.dataset.date+'T12:00:00'); el.title=f.format(d)+' — '+el.dataset.date;
+    });
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded',()=>addHijriTitles(document));
+</script>
 
 <!-- ── Spinner / Toast / Overlay مشتركة ── -->
 <div id="app-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);

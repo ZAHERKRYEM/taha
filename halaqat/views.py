@@ -17,7 +17,7 @@ from django.views.decorators.http import require_POST
 
 from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
-    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance,
+    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr,
 )
 from .forms import CircleForm, StudentForm, CourseForm, WhatsAppAbsentForm
 from .telegram_utils import send_telegram_message, send_telegram_document_bytes
@@ -719,6 +719,31 @@ def search_students(request):
 #  جرد معلومات الطالب / الأستاذ (بيانات + سجل حضور تفصيلي)
 # ============================================================
 
+def _student_month_grid(student, days=28):
+    """آخر `days` يوماً (4 أسابيع) تنتهي باليوم الحالي، مع حالة حضور الطالب في كل يوم."""
+    from datetime import timedelta
+    today = timezone.localdate()
+    start = today - timedelta(days=days - 1)
+    by_date = {
+        r.date: r.status
+        for r in Attendance.objects.filter(student=student, date__gte=start, date__lte=today)
+    }
+    cells = []
+    counts = {'present': 0, 'late': 0, 'absent': 0, 'excused': 0, 'none': 0}
+    for i in range(days):
+        d = start + timedelta(days=i)
+        status = by_date.get(d)
+        counts[status or 'none'] += 1
+        cells.append({'date': d, 'day': d.day, 'status': status, 'is_today': d == today})
+    return {
+        'cells': cells,
+        'counts': counts,
+        'total': days,
+        'start': start,
+        'end': today,
+    }
+
+
 @login_required
 def student_profile(request, student_id):
     student = get_object_or_404(Student.objects.select_related('circle', 'circle__teacher'), pk=student_id)
@@ -745,9 +770,22 @@ def student_profile(request, student_id):
         'page_obj': page_obj,
         'course_records': course_records,
         'courses': student.courses.all(),
+        'month': _student_month_grid(student),
+        'last_sabr': student.sabrs.first(),
         'active_nav': None,
     }
     return render(request, 'halaqat/student_profile.html', context)
+
+
+@login_required
+def student_quick_stats(request, student_id):
+    """جزء HTML صغير (إحصائيات الشهر) يُحمَّل في نافذة منبثقة بدون مغادرة الصفحة."""
+    student = get_object_or_404(Student.objects.select_related('circle'), pk=student_id)
+    return render(request, 'halaqat/_student_month_card.html', {
+        'student': student,
+        'month': _student_month_grid(student),
+        'quick': True,
+    })
 
 
 @login_required
@@ -992,6 +1030,12 @@ def send_all_data_telegram(request):
         ws_catt.append([ca.date.isoformat(), ca.course.name, 'طالب',
                         ca.student.name, ca.get_status_display()])
 
+    # ── ورقة 7: السبر ─────────────────────────────────────────
+    ws_sabr = wb.create_sheet('السبر')
+    _style_sheet(ws_sabr, ['التاريخ', 'اسم الطالب', 'الحلقة'], [14, 30, 28])
+    for sb in Sabr.objects.select_related('student', 'student__circle').order_by('-date', 'student__name'):
+        ws_sabr.append([sb.date.isoformat(), sb.student.name, sb.student.circle.name])
+
     # ── تجميع الملف وإرساله ───────────────────────────────────
     excel_buffer = io.BytesIO()
     wb.save(excel_buffer)
@@ -1181,6 +1225,7 @@ def migrate_sqlite_to_postgres(request):
             ('الطلاب',                Student.objects.count()),
             ('حضور الطلاب',           Attendance.objects.count()),
             ('حضور الأساتذة',         TeacherAttendance.objects.count()),
+            ('السبر',                 Sabr.objects.count()),
             ('الدورات',               Course.objects.count()),
             ('حضور الدورات',          CourseAttendance.objects.count()),
             ('حضور أساتذة الدورات',   CourseTeacherAttendance.objects.count()),
@@ -1230,6 +1275,7 @@ def migrate_sqlite_to_postgres(request):
             Course.objects.all().delete()        # يحذف M2M تلقائياً
             TeacherAttendance.objects.all().delete()
             Attendance.objects.all().delete()
+            Sabr.objects.all().delete()
             Student.objects.all().delete()
             Circle.objects.all().delete()
             Teacher.objects.all().delete()
@@ -1299,6 +1345,19 @@ def migrate_sqlite_to_postgres(request):
                 student_map[key] = s
                 student_by_name.setdefault(s.name, s)   # أول تطابق
             results.append(('الطلاب', len(student_map)))
+
+            # ── 4.5 السبر ──────────────────────────────────────────
+            # أعمدة: التاريخ | اسم الطالب | الحلقة   (الورقة اختيارية: نسخ قديمة بدونها)
+            sabr_objs = []
+            for row in _sheet('السبر'):
+                date_val = _parse_date(row[0])
+                name = str(row[1]).strip() if len(row) > 1 and row[1] else ''
+                circle_name = str(row[2]).strip() if len(row) > 2 and row[2] else ''
+                student = student_map.get((name, circle_name))
+                if date_val and student:
+                    sabr_objs.append(Sabr(student=student, date=date_val))
+            Sabr.objects.bulk_create(sabr_objs)
+            results.append(('السبر', len(sabr_objs)))
 
             # ── 5. حضور الحلقات ────────────────────────────────────
             # أعمدة: التاريخ | الحلقة | النوع | الاسم | الحالة
@@ -1439,3 +1498,258 @@ def migrate_sqlite_to_postgres(request):
 def developer_page(request):
     """صفحة المطور: أدوات النسخ الاحتياطي وترحيل قاعدة البيانات."""
     return render(request, 'halaqat/developer.html', {'active_nav': 'developer'})
+
+
+# ============================================================
+#  صفحة الإحصائيات (فلاتر: الشهر / النطاق / الفئة)
+# ============================================================
+
+_STAT_KEYS = ('present', 'late', 'absent', 'excused')
+
+
+def _rate(counts):
+    """نفس معادلة التطبيق: (حاضر+تأخر) / (حاضر+تأخر+غائب) — الإذن مستبعد."""
+    base = counts['present'] + counts['late'] + counts['absent']
+    if base == 0:
+        return None
+    return round((counts['present'] + counts['late']) / base * 100)
+
+
+def _blank_counts():
+    return {k: 0 for k in _STAT_KEYS}
+
+
+def _stats_population(sources, start, end, top_limit=None):
+    """
+    يجمّع إحصائيات فئة واحدة (طلاب أو كادر) من عدة مصادر سجلات.
+    كل مصدر: dict(qs, label, pid, pname, psub)  — label نص ثابت أو اسم حقل (يبدأ بـ '@').
+    """
+    from collections import defaultdict
+    total = _blank_counts()
+    by_source = {}
+    daily = defaultdict(_blank_counts)
+    people = {}
+
+    for src in sources:
+        qs = src['qs'].filter(date__gte=start, date__lte=end)
+        label_is_field = src['label'].startswith('@')
+        fields = [src['pid'], src['pname'], src.get('psub') or src['pid'], 'date', 'status']
+        if label_is_field:
+            fields.append(src['label'][1:])
+        for row in qs.values_list(*fields):
+            pid, pname, psub, d, status = row[:5]
+            if status not in total:
+                continue
+            label = (src.get('prefix', '') + str(row[5])) if label_is_field else src['label']
+            total[status] += 1
+            by_source.setdefault(label, _blank_counts())[status] += 1
+            daily[d][status] += 1
+            p = people.setdefault(pid, {'id': pid, 'name': pname, 'sub': psub if src.get('psub') else '',
+                                        **_blank_counts()})
+            p[status] += 1
+
+    # صفوف المصادر
+    source_rows = []
+    for label in sorted(by_source):
+        c = by_source[label]
+        source_rows.append({'label': label, **c, 'total': sum(c.values()), 'rate': _rate(c)})
+
+    # الرسم اليومي (كل أيام الشهر)
+    days = []
+    cur = start
+    max_total = 1
+    while cur <= end:
+        c = daily.get(cur, _blank_counts())
+        t = sum(c.values())
+        max_total = max(max_total, t)
+        days.append({'date': cur, 'day': cur.day, **c, 'total': t})
+        cur += datetime.timedelta(days=1)
+    for d in days:
+        for k in _STAT_KEYS:
+            d['h_' + k] = round(d[k] / max_total * 100, 1)
+
+    # الأشخاص: الأكثر غياباً أولاً
+    people_rows = []
+    for p in people.values():
+        p['total'] = sum(p[k] for k in _STAT_KEYS)
+        p['rate'] = _rate(p)
+        people_rows.append(p)
+    people_rows.sort(key=lambda p: (-p['absent'], -p['late'], p['name']))
+    shown = people_rows[:top_limit] if top_limit else people_rows
+
+    return {
+        'counts': total,
+        'total': sum(total.values()),
+        'rate': _rate(total),
+        'sources': source_rows,
+        'days': days,
+        'people': shown,
+        'people_total': len(people_rows),
+        'people_truncated': bool(top_limit and len(people_rows) > top_limit),
+    }
+
+
+def _stats_context(request, top_limit=15):
+    """يقرأ الفلاتر من الطلب ويحسب سياق الإحصائيات (مشترك بين الصفحة وتقرير PDF)."""
+    import calendar
+
+    # ── قراءة الفلاتر ──
+    today = timezone.localdate()
+    month_str = request.GET.get('month', '') or today.strftime('%Y-%m')
+    try:
+        year, month = (int(x) for x in month_str.split('-'))
+        first = datetime.date(year, month, 1)
+    except (ValueError, TypeError):
+        first = today.replace(day=1)
+        month_str = first.strftime('%Y-%m')
+    last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
+
+    scope = request.GET.get('scope', 'all')          # 'all' أو رقم حلقة
+    who = request.GET.get('who', 'both')             # students | staff | both
+    if who not in ('students', 'staff', 'both'):
+        who = 'both'
+
+    circles = list(Circle.objects.order_by('display_order', 'name'))
+    circle = None
+    if scope != 'all':
+        try:
+            circle = next((c for c in circles if c.id == int(scope)), None)
+        except ValueError:
+            circle = None
+        if circle is None:
+            scope = 'all'
+    scope = str(circle.id) if circle else 'all'
+
+    # ── مصادر البيانات حسب النطاق ──
+    student_sources = [dict(qs=Attendance.objects.all(), label='@circle__name', prefix='حلقة ',
+                            pid='student_id', pname='student__name', psub='circle__name')]
+    staff_sources = [dict(qs=TeacherAttendance.objects.all(), label='@circle__name', prefix='حلقة ',
+                          pid='teacher_id', pname='teacher__name')]
+    if circle:
+        student_sources[0]['qs'] = Attendance.objects.filter(circle=circle)
+        staff_sources[0]['qs'] = TeacherAttendance.objects.filter(circle=circle)
+    else:
+        student_sources.append(dict(qs=CourseAttendance.objects.all(), label='@course__name', prefix='دورة ',
+                                    pid='student_id', pname='student__name', psub='student__circle__name'))
+        staff_sources.append(dict(qs=CourseTeacherAttendance.objects.all(), label='@course__name', prefix='دورة ',
+                                  pid='teacher_id', pname='teacher__name'))
+        staff_sources.append(dict(qs=TeacherDailyAttendance.objects.all(), label='التفقد العام',
+                                  pid='teacher_id', pname='teacher__name'))
+
+    students_stats = _stats_population(student_sources, first, last, top_limit=top_limit) if who in ('students', 'both') else None
+    staff_stats = _stats_population(staff_sources, first, last) if who in ('staff', 'both') else None
+
+    prev_month = (first - datetime.timedelta(days=1)).strftime('%Y-%m')
+    next_month = (last + datetime.timedelta(days=1)).strftime('%Y-%m')
+
+    return {
+        'active_nav': 'stats',
+        'month_str': month_str, 'first': first, 'last': last,
+        'prev_month': prev_month, 'next_month': next_month,
+        'circles': circles, 'scope': scope, 'circle': circle, 'who': who,
+        'students_stats': students_stats, 'staff_stats': staff_stats,
+    }
+
+
+@login_required
+def stats_page(request):
+    return render(request, 'halaqat/stats.html', _stats_context(request))
+
+
+@login_required
+def export_stats_pdf(request):
+    """تقرير PDF بكامل الإحصائيات حسب نفس الفلاتر (الشهر / النطاق / الفئة)."""
+    from .pdf_reports import build_stats_pdf
+    ctx = _stats_context(request, top_limit=None)     # التقرير يضم كل الأشخاص لا أعلى 15 فقط
+    pdf_bytes = build_stats_pdf(ctx)
+    scope_tag = f"circle{ctx['circle'].id}" if ctx['circle'] else 'all'
+    filename = f"masjid_taha_stats_{ctx['month_str']}_{scope_tag}_{ctx['who']}.pdf"
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+# ============================================================
+#  السبر: تسجيل آخر سبر لكل طالب
+# ============================================================
+
+def _sabr_item(sabr, today):
+    return {
+        'id': sabr.id,
+        'date': sabr.date.isoformat(),
+        'date_display': sabr.date.strftime('%Y-%m-%d'),
+        'days_ago': (today - sabr.date).days,
+    }
+
+
+def _sabr_payload(student):
+    today = timezone.localdate()
+    items = [_sabr_item(x, today) for x in student.sabrs.all()[:10]]
+    return {
+        'ok': True,
+        'today': today.isoformat(),
+        'student': {'id': student.id, 'name': student.name, 'circle': student.circle.name},
+        'last': items[0] if items else None,
+        'history': items,
+        'total': student.sabrs.count(),
+    }
+
+
+def _parse_sabr_date(request):
+    """يقرأ حقل date من POST (الافتراضي اليوم). يعيد (date, خطأ)."""
+    raw = (request.POST.get('date') or '').strip()
+    if not raw:
+        return timezone.localdate(), None
+    try:
+        d = datetime.date.fromisoformat(raw)
+    except ValueError:
+        return None, 'تاريخ غير صالح'
+    if d > timezone.localdate():
+        return None, 'لا يمكن تسجيل سبر بتاريخ مستقبلي'
+    return d, None
+
+
+@login_required
+def sabr_page(request):
+    return render(request, 'halaqat/sabr.html', {'active_nav': 'sabr', 'today': timezone.localdate()})
+
+
+@login_required
+def sabr_student_info(request, student_id):
+    student = get_object_or_404(Student.objects.select_related('circle'), pk=student_id)
+    return JsonResponse(_sabr_payload(student))
+
+
+@login_required
+@require_POST
+def sabr_add(request, student_id):
+    student = get_object_or_404(Student.objects.select_related('circle'), pk=student_id)
+    d, err = _parse_sabr_date(request)
+    if err:
+        return JsonResponse({'ok': False, 'error': err}, status=400)
+    Sabr.objects.create(student=student, date=d)
+    return JsonResponse(_sabr_payload(student))
+
+
+@login_required
+@require_POST
+def sabr_update(request, sabr_id):
+    sabr = get_object_or_404(Sabr.objects.select_related('student', 'student__circle'), pk=sabr_id)
+    d, err = _parse_sabr_date(request)
+    if err:
+        return JsonResponse({'ok': False, 'error': err}, status=400)
+    old = sabr.date
+    sabr.date = d
+    sabr.save(update_fields=['date'])
+    _log_admin_action(request, f'✏️ تعديل تاريخ سبر {sabr.student.name}: {old} ← {d}')
+    return JsonResponse(_sabr_payload(sabr.student))
+
+
+@login_required
+@require_POST
+def sabr_delete(request, sabr_id):
+    sabr = get_object_or_404(Sabr.objects.select_related('student', 'student__circle'), pk=sabr_id)
+    student = sabr.student
+    _log_admin_action(request, f'🗑 حذف سبر {student.name} بتاريخ {sabr.date}')
+    sabr.delete()
+    return JsonResponse(_sabr_payload(student))

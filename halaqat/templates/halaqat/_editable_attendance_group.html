@@ -12,7 +12,7 @@
       <div class="student-name">
         <div class="avatar">{{ row.student.name|first }}</div>
         <div>
-          {{ row.student.name }}
+          {{ row.student.name }}<button type="button" class="qs-btn" onclick="openQuickStats({{ row.student.id }})" title="إحصائيات آخر 4 أسابيع">📊</button>
           <div class="absence-stats">
             <span>غياب الأسبوع: {{ row.week_absences }}</span>
             <span>غياب الشهر: {{ row.month_absences }}</span>

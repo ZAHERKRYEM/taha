@@ -1,0 +1,74 @@
+<div class="st-section">
+  <h3 class="st-title">{{ title }}</h3>
+
+  {% if st.total == 0 %}
+    <div class="panel"><p style="font-size:13px;color:#9c8a71;margin:0">لا توجد سجلات حضور في هذا الشهر ضمن الفلاتر المحددة.</p></div>
+  {% else %}
+
+  <div class="stats-row st-cards">
+    <div class="stat-card"><div class="num">{% if st.rate is not None %}{{ st.rate }}%{% else %}—{% endif %}</div><div class="lbl">نسبة الحضور</div></div>
+    <div class="stat-card"><div class="num">{{ st.total }}</div><div class="lbl">إجمالي السجلات</div></div>
+  </div>
+  <div class="summary-bar">
+    <div class="summary-chip present"><div class="n">{{ st.counts.present }}</div><div class="l">حاضر</div></div>
+    <div class="summary-chip late"><div class="n">{{ st.counts.late }}</div><div class="l">تأخر</div></div>
+    <div class="summary-chip absent"><div class="n">{{ st.counts.absent }}</div><div class="l">غائب</div></div>
+    <div class="summary-chip excused"><div class="n">{{ st.counts.excused }}</div><div class="l">إذن</div></div>
+  </div>
+
+  <div class="panel">
+    <h3>الحضور اليومي</h3>
+    <div class="st-chart">
+      {% for d in st.days %}
+      <div class="st-bar" title="{{ d.date|date:'j F' }} — حاضر {{ d.present }} · تأخر {{ d.late }} · غائب {{ d.absent }} · إذن {{ d.excused }}">
+        <div class="st-stack">
+          <i class="s-excused" style="height:{{ d.h_excused }}%"></i>
+          <i class="s-absent"  style="height:{{ d.h_absent }}%"></i>
+          <i class="s-late"    style="height:{{ d.h_late }}%"></i>
+          <i class="s-present" style="height:{{ d.h_present }}%"></i>
+        </div>
+        <span>{{ d.day }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="att-legend" style="margin:8px 0 0">
+      <span><i class="s-present"></i> حاضر</span><span><i class="s-late"></i> تأخر</span>
+      <span><i class="s-absent"></i> غياب</span><span><i class="s-excused"></i> إذن</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>حسب المصدر</h3>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>المصدر</th><th>حاضر</th><th>تأخر</th><th>غائب</th><th>إذن</th><th>النسبة</th></tr></thead>
+        <tbody>
+          {% for r in st.sources %}
+          <tr><td>{{ r.label }}</td><td>{{ r.present }}</td><td>{{ r.late }}</td><td>{{ r.absent }}</td><td>{{ r.excused }}</td>
+              <td>{% if r.rate is not None %}{{ r.rate }}%{% else %}—{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>{{ people_title }}{% if st.people_truncated %} <small style="color:#9c8a71;font-weight:400">(أعلى {{ st.people|length }} من {{ st.people_total }})</small>{% endif %}</h3>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>الاسم</th><th>حاضر</th><th>تأخر</th><th>غائب</th><th>إذن</th><th>النسبة</th></tr></thead>
+        <tbody>
+          {% for p in st.people %}
+          <tr>
+            <td>{% if kind == "students" %}<a href="{% url 'student_profile' p.id %}">{{ p.name }}</a>{% else %}<a href="{% url 'teacher_profile' p.id %}">{{ p.name }}</a>{% endif %}
+                {% if p.sub %}<div class="absence-stats"><span>{{ p.sub }}</span></div>{% endif %}</td>
+            <td>{{ p.present }}</td><td>{{ p.late }}</td><td>{{ p.absent }}</td><td>{{ p.excused }}</td>
+            <td>{% if p.rate is not None %}{{ p.rate }}%{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>

@@ -540,3 +540,81 @@ button, input, select, textarea { font-family: inherit; }
   .circle-detail-head { display: flex; align-items: center; justify-content: space-between; }
   .date-form { margin-top: 0; }
 }
+/* ===== إحصائيات الحضور (آخر 4 أسابيع) ===== */
+.att-card{background:#fff;border:1px solid var(--accent-light);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.att-card h3{margin:0 0 10px;font-size:15px;color:var(--ink)}
+.att-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#7a6a55;margin-bottom:10px}
+.att-legend i{display:inline-block;width:12px;height:5px;border-radius:3px;margin-left:4px;vertical-align:middle}
+.att-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.att-grid .dc{position:relative;background:var(--bg);border:1px solid var(--accent-light);border-radius:8px;
+  min-height:44px;padding:5px 4px 9px;text-align:center;font-size:13px;font-weight:700;color:var(--ink)}
+.att-grid .dc.x{background:#eee;color:#999;border-color:#ddd}
+.att-grid .dc.today{outline:2px solid var(--primary);outline-offset:1px}
+.att-grid .dc u{position:absolute;left:8px;right:8px;bottom:5px;height:5px;border-radius:3px;text-decoration:none}
+.s-present{background:var(--success)}
+.s-late{background:var(--warning)}
+.s-absent{background:var(--error)}
+.s-excused{background:#6B8CAE}
+.s-none{background:#ccc}
+.att-sum{margin-top:10px;font-size:12px;color:#7a6a55;line-height:1.8}
+
+/* نافذة الإحصائيات السريعة */
+.qs-btn{border:none;background:var(--bg-alt);color:var(--primary-dark);border-radius:8px;padding:2px 8px;
+  font-size:12px;cursor:pointer;margin-right:6px;font-family:inherit}
+.qs-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:8000;display:none;align-items:center;
+  justify-content:center;padding:16px}
+.qs-overlay.open{display:flex}
+.qs-box{background:var(--bg);border-radius:14px;max-width:460px;width:100%;max-height:90vh;overflow:auto;padding:12px}
+.qs-close{display:block;margin:0 0 8px auto;border:none;background:none;font-size:20px;cursor:pointer;color:#7a6a55}
+
+/* ===== صفحة الإحصائيات ===== */
+.st-filters{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;margin-bottom:16px}
+.st-filters select,.st-filters input[type=month]{padding:7px 10px;border:1px solid var(--accent-light);border-radius:8px;
+  background:#fff;font-family:inherit;font-size:13px;color:var(--ink)}
+.st-filters label{font-size:12px;color:#7a6a55;display:flex;flex-direction:column;gap:4px}
+.st-month{display:flex;align-items:center;gap:6px}
+.st-arrow{padding:6px 10px;background:var(--bg-alt);border-radius:8px;color:var(--primary-dark);text-decoration:none;font-size:12px}
+.st-who{display:flex;gap:12px;flex-wrap:wrap}
+.st-who label{flex-direction:row;align-items:center;gap:5px;font-size:13px;color:var(--ink)}
+.st-section{margin-bottom:26px}
+.st-title{margin:6px 0 10px;font-size:17px;color:var(--ink)}
+.st-cards{grid-template-columns:repeat(2,1fr)!important}
+.st-section .panel{margin-bottom:14px}
+.st-chart{display:flex;gap:3px;align-items:flex-end;overflow-x:auto;padding-bottom:4px}
+.st-bar{flex:1 0 14px;min-width:14px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;color:#9c8a71}
+.st-stack{width:100%;height:90px;display:flex;flex-direction:column-reverse;justify-content:flex-start;background:var(--bg);border-radius:3px;overflow:hidden}
+.st-stack i{display:block;width:100%}
+
+/* ===== السبر ===== */
+.sb-search{position:relative;margin-bottom:14px}
+.sb-search input{width:100%;box-sizing:border-box;padding:11px 14px;font-size:15px;border:1px solid var(--accent-light);
+  border-radius:10px;background:#fff;font-family:inherit;color:var(--ink)}
+.sb-results{position:absolute;top:calc(100% - 6px);right:14px;left:14px;background:#fff;border:1px solid var(--accent-light);
+  border-radius:10px;box-shadow:0 8px 24px -8px rgba(74,52,32,.3);z-index:20;max-height:320px;overflow:auto}
+.sb-item{display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 14px;border:none;background:none;
+  font-family:inherit;font-size:14px;color:var(--ink);cursor:pointer;text-align:right;border-bottom:1px solid var(--bg-alt)}
+.sb-item:hover{background:var(--bg)}
+.sb-item small{color:#9c8a71;font-size:12px}
+.sb-empty{padding:12px 14px;font-size:13px;color:#9c8a71}
+.sb-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.sb-name{font-size:18px;font-weight:700;color:var(--ink)}
+.sb-sub{font-size:12px;color:#9c8a71;margin-top:2px}
+.sb-last{background:var(--bg);border:1px solid var(--accent-light);border-radius:10px;padding:12px 14px;margin-bottom:14px;
+  display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:15px}
+.sb-last-lbl{font-size:12px;color:#9c8a71}
+.sb-ago{font-size:12px;color:var(--primary-dark)}
+.sb-none{color:#9c8a71;font-size:14px}
+.sb-new{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.sb-new label,.sb-row input{font-size:12px;color:#7a6a55}
+.sb-new label{display:flex;flex-direction:column;gap:4px}
+.sb-new input,.sb-row input{padding:8px 10px;border:1px solid var(--accent-light);border-radius:8px;background:#fff;font-family:inherit;font-size:14px;color:var(--ink)}
+.sb-hint{font-size:11px;color:#9c8a71;margin-top:8px}
+.sb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bg-alt)}
+.sb-row:last-child{border-bottom:none}
+.sb-row .sb-ago{flex:1}
+
+/* شريط التنقل السفلي: تمرير أفقي عند كثرة العناصر */
+.bottom-nav{overflow-x:auto;justify-content:flex-start;scrollbar-width:none}
+.bottom-nav::-webkit-scrollbar{display:none}
+.bottom-nav a{flex:1 0 auto;min-width:62px}
+.st-pdf{text-decoration:none;display:inline-block;margin-right:auto;font-size:13px;white-space:nowrap}

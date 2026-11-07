@@ -1,0 +1,41 @@
+{% extends "halaqat/base.html" %}
+{% block title %}الإحصائيات — مسجد طه{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h2>📊 الإحصائيات</h2>
+  <div class="desc">{{ first|date:"F Y" }}
+    · {% if circle %}حلقة {{ circle.name }}{% else %}كامل المسجد{% endif %}
+    · {% if who == 'students' %}الطلاب فقط{% elif who == 'staff' %}الكادر فقط{% else %}الطلاب والكادر{% endif %}
+  </div>
+</div>
+
+<form method="get" class="panel st-filters" id="st-form">
+  <div class="st-month">
+    <a href="?month={{ prev_month }}&scope={{ scope }}&who={{ who }}" class="st-arrow" title="الشهر السابق">▶</a>
+    <input type="month" name="month" value="{{ month_str }}" onchange="this.form.submit()">
+    <a href="?month={{ next_month }}&scope={{ scope }}&who={{ who }}" class="st-arrow" title="الشهر التالي">◀</a>
+  </div>
+  <label>النطاق
+    <select name="scope" onchange="this.form.submit()">
+      <option value="all" {% if scope == 'all' %}selected{% endif %}>🕌 كامل المسجد (حلقات + دورات + تفقد عام)</option>
+      {% for c in circles %}<option value="{{ c.id }}" {% if scope == c.id|stringformat:"s" %}selected{% endif %}>📖 {{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="st-who">
+    <label><input type="radio" name="who" value="both" {% if who == 'both' %}checked{% endif %} onchange="this.form.submit()"> الكل</label>
+    <label><input type="radio" name="who" value="students" {% if who == 'students' %}checked{% endif %} onchange="this.form.submit()"> الطلاب</label>
+    <label><input type="radio" name="who" value="staff" {% if who == 'staff' %}checked{% endif %} onchange="this.form.submit()"> الكادر فقط</label>
+  </div>
+  <a href="{% url 'export_stats_pdf' %}?month={{ month_str }}&scope={{ scope }}&who={{ who }}"
+     class="btn-primary st-pdf" onclick="showToast('📄 جاري إنشاء التقرير…','info',3000)">📄 تصدير PDF</a>
+</form>
+
+{% if students_stats %}
+  {% include "halaqat/_stats_block.html" with kind="students" st=students_stats title="👥 الطلاب" people_title="الطلاب الأكثر غياباً" %}
+{% endif %}
+{% if staff_stats %}
+  {% include "halaqat/_stats_block.html" with kind="staff" st=staff_stats title="👨‍🏫 الكادر" people_title="سجل الكادر" %}
+{% endif %}
+
+{% endblock %}

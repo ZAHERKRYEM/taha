@@ -11,6 +11,7 @@
     {% if student.circle.teacher %} · الأستاذ: {{ student.circle.teacher.name }}{% endif %}
     {% if student.phone %} · هاتف: {{ student.phone }}{% endif %}
     · منضم منذ {{ student.joined_at|date:"Y-m-d" }}
+    · {% if last_sabr %}آخر سبر: {{ last_sabr.date|date:"Y-m-d" }}{% else %}لا يوجد سبر مسجّل{% endif %}
     {% if student.notes %} · ملاحظات: {{ student.notes }}{% endif %}
   </div>
 </div>
@@ -26,6 +27,8 @@
   <div class="summary-chip absent"><div class="n">{{ stats.absent }}</div><div class="l">غائب</div></div>
   <div class="summary-chip excused"><div class="n">{{ stats.excused }}</div><div class="l">إذن</div></div>
 </div>
+
+{% include "halaqat/_student_month_card.html" %}
 
 {% if courses %}
 <div class="panel" style="margin-bottom:16px;">

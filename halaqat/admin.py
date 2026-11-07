@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
-    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance,
+    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr,
 )
 
 
@@ -68,3 +68,10 @@ class TeacherDailyAttendanceAdmin(admin.ModelAdmin):
     list_display = ('teacher', 'date', 'status')
     list_filter = ('status', 'date')
     date_hierarchy = 'date'
+
+
+@admin.register(Sabr)
+class SabrAdmin(admin.ModelAdmin):
+    list_display = ('student', 'date')
+    list_filter = ('date',)
+    search_fields = ('student__name',)

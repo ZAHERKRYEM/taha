@@ -1,0 +1,22 @@
+<div class="card att-card">
+  <h3>الحضور — آخر 4 أسابيع{% if quick %} · {{ student.name }}{% endif %}</h3>
+  <div class="att-legend">
+    <span><i class="s-present"></i> حاضر</span>
+    <span><i class="s-late"></i> تأخر</span>
+    <span><i class="s-absent"></i> غياب</span>
+    <span><i class="s-excused"></i> إذن</span>
+    <span><i class="s-none"></i> غير مسجّل</span>
+  </div>
+  <div class="att-grid">
+    {% for c in month.cells %}
+    <div class="dc{% if not c.status %} x{% endif %}{% if c.is_today %} today{% endif %}"
+         data-date="{{ c.date|date:'Y-m-d' }}"
+         title="{{ c.date|date:'l j F Y' }}">{{ c.day }}{% if c.status %}<u class="s-{{ c.status }}"></u>{% endif %}</div>
+    {% endfor %}
+  </div>
+  <div class="att-sum">
+    حاضر {{ month.counts.present }} · تأخر {{ month.counts.late }} · غياب {{ month.counts.absent }}
+    · إذن {{ month.counts.excused }} · غير مسجّل {{ month.counts.none }}
+    (من {{ month.total }} يوماً: {{ month.start|date:'Y-m-d' }} ← {{ month.end|date:'Y-m-d' }})
+  </div>
+</div>
