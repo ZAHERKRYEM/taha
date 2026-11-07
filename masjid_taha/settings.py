@@ -50,13 +50,20 @@ CSRF_TRUSTED_ORIGINS = [
 #  Render يُعيّن DATABASE_URL تلقائياً عند إضافة PostgreSQL service
 #  للتطوير المحلي: يرجع تلقائياً إلى SQLite
 # ══════════════════════════════════════════════════════════════
-DATABASES = {
-    'default': dj_database_url.config(
-        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
-        conn_max_age=600,
-    )
-}
+# DATABASES = {
+#     'default': dj_database_url.config(
+#         default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+#         conn_max_age=600,
+#     )
+# }
 
+# قاعدة البيانات - SQLite للتطوير المحلي
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
 # ══════════════════════════════════════════════════════════════
 #  تلغرام  (نسخ احتياطي + سجل عمليات لوحة التحكم)
 # ══════════════════════════════════════════════════════════════
