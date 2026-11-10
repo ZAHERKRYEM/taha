@@ -163,30 +163,37 @@ def _banner(text):
 # ---------------------------------------------------------------- الرسم اليومي
 
 def _daily_chart(days):
-    """أعمدة مكدّسة لكل يوم في الشهر؛ اليوم الأول عند اليمين (اتجاه عربي)."""
+    """أعمدة مكدّسة 100% لكل يوم/أسبوع/شهر؛ الأقدم عند اليمين (اتجاه عربي)."""
     H = 125
-    base, top_pad, side = 22, 14, 6
+    base, top_pad, side = 22, 14, 22
     plot_h = H - base - top_pad
     d = Drawing(CONTENT_W, H)
     n = len(days)
     slot = (CONTENT_W - 2 * side) / max(n, 1)
     bar_w = slot * 0.68
-    max_total = max((x['total'] for x in days), default=0) or 1
+    every = max(1, -(-n // 31))
 
-    d.add(Line(side, base, CONTENT_W - side, base, strokeColor=LINE, strokeWidth=0.8))
-    d.add(String(side, H - 9, f'max {max_total}', fontName=FONT, fontSize=6.5, fillColor=colors.grey))
+    for v in (0, 50, 100):
+        y = base + v / 100 * plot_h
+        d.add(Line(side, y, CONTENT_W - side, y, strokeColor=LINE, strokeWidth=0.5))
+        d.add(String(side - 3, y - 2, f'{v}%', fontName=FONT, fontSize=6, fillColor=colors.grey, textAnchor='end'))
 
     for i, day in enumerate(days):
         x = CONTENT_W - side - (i + 1) * slot + (slot - bar_w) / 2
         y = base
-        for key, col in (('present', C_PRESENT), ('late', C_LATE),
-                         ('absent', C_ABSENT), ('excused', C_EXCUSED)):
-            h = day[key] / max_total * plot_h
-            if h > 0:
-                d.add(Rect(x, y, bar_w, h, fillColor=col, strokeColor=None))
-                y += h
-        d.add(String(x + bar_w / 2, base - 10, str(day['day']), fontName=FONT, fontSize=6.5,
-                     fillColor=INK, textAnchor='middle'))
+        total = day['total']
+        if total:
+            for key, col in (('present', C_PRESENT), ('late', C_LATE),
+                             ('absent', C_ABSENT), ('excused', C_EXCUSED)):
+                h = day[key] / total * plot_h
+                if h > 0:
+                    d.add(Rect(x, y, bar_w, h, fillColor=col, strokeColor=None))
+                    y += h
+        else:
+            d.add(Rect(x, y, bar_w, plot_h, fillColor=SOFT, strokeColor=None))
+        if i % every == 0:
+            d.add(String(x + bar_w / 2, base - 10, ar(day['label']), fontName=FONT, fontSize=6,
+                         fillColor=INK, textAnchor='middle'))
     return d
 
 
@@ -204,54 +211,57 @@ def _legend():
 
 # ---------------------------------------------------------------- الأقسام
 
+def _p(v):
+    return f'{v}%'
+
+
 def _population_section(kind, title, st):
-    """kind: 'students' | 'staff'"""
+    """kind: 'students' | 'staff' — كل القيم نسب مئوية من مجموع السجلات."""
     out = [_heading(title, 14)]
     if st['total'] == 0:
-        out.append(_line('لا توجد سجلات حضور في هذا الشهر ضمن الفلاتر المحددة.', color=colors.grey))
+        out.append(_line('لا توجد سجلات حضور في هذه الفترة ضمن الفلاتر المحددة.', color=colors.grey))
         out.append(Spacer(1, 8))
         return out
 
-    c = st['counts']
     # الملخص
     out.append(_rtl_table(
-        ['نسبة الحضور', 'إجمالي السجلات', 'حاضر', 'تأخر', 'غائب', 'إذن'],
-        [[_pct(st['rate']), st['total'], c['present'], c['late'], c['absent'], c['excused']]],
-        [95, 95, 80, 80, 80, 85], name_cols=(),
-        header_colors={2: C_PRESENT, 3: C_LATE, 4: C_ABSENT, 5: C_EXCUSED}, size=10))
+        ['نسبة الحضور', 'العدد', 'أيام الدوام', 'حاضر', 'تأخر', 'غائب', 'إذن'],
+        [[_pct(st['rate']), st['people_total'], st['session_days'], _p(st['pct_present']), _p(st['pct_late']),
+          _p(st['pct_absent']), _p(st['pct_excused'])]],
+        [85, 65, 70, 74, 74, 74, 73], name_cols=(),
+        header_colors={3: C_PRESENT, 4: C_LATE, 5: C_ABSENT, 6: C_EXCUSED}, size=10))
     out.append(Spacer(1, 10))
 
-    # الحضور اليومي
-    out.append(KeepTogether([_line('الحضور اليومي', 10.5), Spacer(1, 3),
-                             _daily_chart(st['days']), _legend()]))
+    mode_lbl = {'day': 'اليومي', 'week': 'الأسبوعي', 'month': 'الشهري'}[st['chart_mode']]
+    out.append(KeepTogether([_line(f'توزّع الحضور {mode_lbl} (٪)', 10.5), Spacer(1, 3),
+                             _daily_chart(st['chart']), _legend()]))
     out.append(Spacer(1, 8))
 
-    # حسب المصدر
     out.append(_line('حسب المصدر', 10.5, keep=True))
     out.append(_rtl_table(
-        ['المصدر', 'حاضر', 'تأخر', 'غائب', 'إذن', 'النسبة'],
-        [[r['label'], r['present'], r['late'], r['absent'], r['excused'], _pct(r['rate'])]
+        ['المصدر', 'نسبة الحضور', 'حاضر', 'تأخر', 'غائب', 'إذن'],
+        [[r['label'], _pct(r['rate']), _p(r['pct_present']), _p(r['pct_late']), _p(r['pct_absent']), _p(r['pct_excused'])]
          for r in st['sources']],
-        [215, 60, 60, 60, 60, 60], header_colors={1: C_PRESENT, 2: C_LATE, 3: C_ABSENT, 4: C_EXCUSED}))
+        [195, 70, 62, 62, 62, 64], header_colors={2: C_PRESENT, 3: C_LATE, 4: C_ABSENT, 5: C_EXCUSED}))
     out.append(Spacer(1, 10))
 
-    # الأشخاص
     if kind == 'students':
-        out.append(_line(f'سجل الطلاب — مرتب حسب الأكثر غياباً ({st["people_total"]} طالب)', 10.5, keep=True))
+        out.append(_line(f'سجل الطلاب ({st["people_total"]} طالب)', 10.5, keep=True))
         out.append(_rtl_table(
-            ['الاسم', 'الحلقة', 'حاضر', 'تأخر', 'غائب', 'إذن', 'النسبة'],
-            [[p['name'], p['sub'], p['present'], p['late'], p['absent'], p['excused'], _pct(p['rate'])]
+            ['الاسم', 'الحلقة', 'العمر', 'الحضور', 'حاضر', 'تأخر', 'غائب', 'إذن'],
+            [[p['name'], p['sub'], p.get('age') if p.get('age') is not None else '—', _pct(p['rate']),
+              _p(p['pct_present']), _p(p['pct_late']), _p(p['pct_absent']), _p(p['pct_excused'])]
              for p in st['people']],
-            [150, 105, 52, 52, 52, 52, 52], name_cols=(0, 1),
-            header_colors={2: C_PRESENT, 3: C_LATE, 4: C_ABSENT, 5: C_EXCUSED}))
+            [130, 95, 36, 50, 51, 51, 51, 51], name_cols=(0, 1),
+            header_colors={4: C_PRESENT, 5: C_LATE, 6: C_ABSENT, 7: C_EXCUSED}))
     else:
         out.append(_line(f'سجل الكادر ({st["people_total"]})', 10.5, keep=True))
         out.append(_rtl_table(
-            ['الاسم', 'حاضر', 'تأخر', 'غائب', 'إذن', 'النسبة'],
-            [[p['name'], p['present'], p['late'], p['absent'], p['excused'], _pct(p['rate'])]
+            ['الاسم', 'الحضور', 'حاضر', 'تأخر', 'غائب', 'إذن'],
+            [[p['name'], _pct(p['rate']), _p(p['pct_present']), _p(p['pct_late']), _p(p['pct_absent']), _p(p['pct_excused'])]
              for p in st['people']],
-            [235, 56, 56, 56, 56, 56],
-            header_colors={1: C_PRESENT, 2: C_LATE, 3: C_ABSENT, 4: C_EXCUSED}))
+            [215, 60, 60, 60, 60, 60],
+            header_colors={2: C_PRESENT, 3: C_LATE, 4: C_ABSENT, 5: C_EXCUSED}))
     out.append(Spacer(1, 14))
     return out
 
@@ -288,9 +298,13 @@ def build_stats_pdf(ctx):
     story = [
         _banner('تقرير إحصائيات الحضور — مسجد طه'),
         Spacer(1, 8),
-        _line(f"الشهر: {_month_label(ctx['first'])}", 10.5),
+        _line(f"الفترة: من {ctx['start']:%Y-%m-%d} إلى {ctx['end']:%Y-%m-%d}", 10.5),
         _line(f'النطاق: {scope_label}', 10.5),
         _line(f'الفئة: {who_label}', 10.5),
+        *([_line('العمر: ' + ' '.join(x for x in (
+            f"من {ctx['age_min']}" if ctx.get('age_min') is not None else '',
+            f"إلى {ctx['age_max']}" if ctx.get('age_max') is not None else '') if x), 10.5)]
+          if ctx.get('age_min') is not None or ctx.get('age_max') is not None else []),
         _line(f"تاريخ إنشاء التقرير: {now:%Y-%m-%d %H:%M}", 8.5, colors.grey),
         _line('نسبة الحضور = (حاضر + تأخر) ÷ (حاضر + تأخر + غائب)، ولا يُحتسب الإذن.', 8.5, colors.grey),
         Spacer(1, 6),

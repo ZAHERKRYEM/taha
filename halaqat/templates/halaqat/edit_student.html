@@ -6,7 +6,7 @@
 
 <div class="page-header">
   <h2>تعديل بيانات: {{ student.name }}</h2>
-  <div class="desc">يمكنك تعديل اسم الطالب، الحلقة، أو الملاحظات</div>
+  <div class="desc">يمكنك تعديل اسم الطالب، الحلقة، تاريخ الميلاد، أو الملاحظات</div>
 </div>
 
 <div class="panel" style="max-width:480px;">
@@ -19,6 +19,10 @@
     <div class="field">
       <label for="{{ form.circle.id_for_label }}">الحلقة</label>
       {{ form.circle }}
+    </div>
+    <div class="field">
+      <label for="{{ form.birth_date.id_for_label }}">تاريخ الميلاد (اختياري — لحساب العمر)</label>
+      {{ form.birth_date }}
     </div>
     <div class="field">
       <label for="{{ form.phone.id_for_label }}">رقم الهاتف (اختياري)</label>

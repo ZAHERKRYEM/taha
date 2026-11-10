@@ -44,6 +44,8 @@
   </a>
 </div>
 
+{% include "halaqat/_history_legend.html" %}
+
 <div class="summary-bar">
   <div class="summary-chip present"><div class="n" id="cnt-present">{{ present_count }}</div><div class="l">حاضر</div></div>
   <div class="summary-chip late"><div class="n" id="cnt-late">{{ late_count }}</div><div class="l">تأخر</div></div>
@@ -87,7 +89,10 @@
   <div class="student-row" data-kind="student" data-entity-id="{{ row.student.id }}" data-save-url="{% url 'save_attendance' circle.id %}" data-date="{{ selected_date|date:'Y-m-d' }}">
     <div class="student-name">
       <div class="avatar">{{ row.student.name|first }}</div>
-      {{ row.student.name }}<button type="button" class="qs-btn" onclick="openQuickStats({{ row.student.id }})" title="إحصائيات آخر 4 أسابيع">📊</button>
+      <div class="name-col">
+        <div class="name-line"><a href="{% url 'student_profile' row.student.id %}" class="student-link">{{ row.student.name }}</a><button type="button" class="qs-btn" onclick="openQuickStats({{ row.student.id }})" title="إحصائيات آخر 4 أسابيع">📊</button></div>
+        {% include "halaqat/_history_strip.html" with hist=row.history %}
+      </div>
     </div>
     <div class="tristate">
       <input type="radio" name="status_{{ row.student.id }}" id="present_{{ row.student.id }}" value="present" {% if row.status == 'present' %}checked{% endif %}>

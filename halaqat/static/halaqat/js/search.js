@@ -1,4 +1,4 @@
-// بحث فوري عن طالب بالاسم - يعرض اسمه وحلقته، والضغط عليه ينقل لصفحة تلك الحلقة
+// بحث فوري عن طالب بالاسم (محلياً في المتصفح) - الضغط على الاسم ينقل لصفحة حضوره، وعلى الحلقة لصفحة الحلقة
 document.addEventListener('DOMContentLoaded', function () {
   const input = document.getElementById('studentSearch');
   const results = document.getElementById('searchResults');
@@ -17,11 +17,10 @@ document.addEventListener('DOMContentLoaded', function () {
     results.innerHTML = items.map(function (s) {
       return (
         '<div class="search-result-row">' +
-        '<a href="/circles/' + s.circle_id + '/">' +
+        '<a href="/students/' + s.id + '/profile/" title="صفحة حضور الطالب">' +
         '<span class="s-name">' + escapeHtml(s.name) + '</span>' +
-        '<span class="s-circle">' + escapeHtml(s.circle_name) + '</span>' +
         '</a>' +
-        '<a class="s-profile" href="/students/' + s.id + '/profile/" title="عرض ملف الطالب">👁</a>' +
+        '<a class="s-circle" style="margin:0 10px" href="/circles/' + s.circle_id + '/" title="فتح صفحة الحلقة">' + escapeHtml(s.circle_name) + '</a>' +
         '</div>'
       );
     }).join('');
@@ -46,17 +45,20 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     debounceTimer = setTimeout(function () {
-      fetch(searchUrl + '?q=' + encodeURIComponent(query))
-        .then((res) => res.json())
-        .then((data) => {
+      // البحث محلياً في المتصفح (StudentIndex) مع رجوع للسيرفر إن لم يتوفر الفهرس
+      const run = window.StudentIndex
+        ? window.StudentIndex.search(query, 15)
+        : fetch(searchUrl + '?q=' + encodeURIComponent(query)).then((res) => res.json()).then((d) => d.results || []);
+      run
+        .then((items) => {
           if (query !== lastQuery) return; // تجاهل النتائج المتأخرة
-          render(data.results || []);
+          render(items);
         })
         .catch(() => {
           results.innerHTML = '<div class="no-result">حدث خطأ أثناء البحث</div>';
           results.classList.add('show');
         });
-    }, 250);
+    }, 80);
   });
 
   document.addEventListener('click', function (e) {

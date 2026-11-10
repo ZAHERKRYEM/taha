@@ -1,0 +1,6 @@
+{% if hist and hist.cells %}
+<div class="hist-strip" title="الحضور في آخر {{ hist.cells|length }} جلسات">
+  {% for c in hist.cells %}<span class="hc{% if c.status %} h-{{ c.status }}{% endif %}" data-date="{{ c.date|date:'Y-m-d' }}" title="{{ c.date|date:'l j F Y' }} — {% if c.status == 'present' %}حاضر{% elif c.status == 'late' %}تأخر{% elif c.status == 'absent' %}غائب{% elif c.status == 'excused' %}إذن{% else %}غير مسجّل{% endif %}">{{ c.date|date:'j' }}</span>{% endfor %}
+  {% if hist.rate is not None %}<b class="hist-rate">{{ hist.rate }}%</b>{% endif %}
+</div>
+{% endif %}

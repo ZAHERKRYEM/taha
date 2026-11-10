@@ -4,38 +4,139 @@
 
 <div class="page-header">
   <h2>📊 الإحصائيات</h2>
-  <div class="desc">{{ first|date:"F Y" }}
+  <div class="desc">من {{ start|date:"Y-m-d" }} إلى {{ end|date:"Y-m-d" }} ({{ days_span }} يوماً)
     · {% if circle %}حلقة {{ circle.name }}{% else %}كامل المسجد{% endif %}
     · {% if who == 'students' %}الطلاب فقط{% elif who == 'staff' %}الكادر فقط{% else %}الطلاب والكادر{% endif %}
+    {% if age_min is not None or age_max is not None %}· العمر {% if age_min is not None %}من {{ age_min }}{% endif %} {% if age_max is not None %}إلى {{ age_max }}{% endif %}{% endif %}
   </div>
 </div>
 
 <form method="get" class="panel st-filters" id="st-form">
-  <div class="st-month">
-    <a href="?month={{ prev_month }}&scope={{ scope }}&who={{ who }}" class="st-arrow" title="الشهر السابق">▶</a>
-    <input type="month" name="month" value="{{ month_str }}" onchange="this.form.submit()">
-    <a href="?month={{ next_month }}&scope={{ scope }}&who={{ who }}" class="st-arrow" title="الشهر التالي">◀</a>
+  <div class="st-range">
+    <label>من تاريخ <input type="date" name="from" value="{{ start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>إلى تاريخ <input type="date" name="to" value="{{ end|date:'Y-m-d' }}"></label>
+  </div>
+  <div class="st-quick">
+    {% for q in quick_ranges %}<a href="?from={{ q.from }}&to={{ q.to }}&{{ keep_qs }}" class="{% if q.on %}on{% endif %}">{{ q.label }}</a>{% endfor %}
   </div>
   <label>النطاق
-    <select name="scope" onchange="this.form.submit()">
+    <select name="scope">
       <option value="all" {% if scope == 'all' %}selected{% endif %}>🕌 كامل المسجد (حلقات + دورات + تفقد عام)</option>
       {% for c in circles %}<option value="{{ c.id }}" {% if scope == c.id|stringformat:"s" %}selected{% endif %}>📖 {{ c.name }}</option>{% endfor %}
     </select>
   </label>
+  <label>ترتيب الطلاب
+    <select name="sort">
+      <option value="absence" {% if sort == 'absence' %}selected{% endif %}>الأعلى نسبة غياب</option>
+      <option value="rate" {% if sort == 'rate' %}selected{% endif %}>الأعلى نسبة حضور</option>
+      <option value="circle" {% if sort == 'circle' %}selected{% endif %}>حسب الحلقة</option>
+      <option value="age" {% if sort == 'age' %}selected{% endif %}>حسب العمر</option>
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>أبجدياً</option>
+    </select>
+  </label>
+  <label>العمر من
+    <input type="number" name="age_min" min="3" max="99" value="{{ age_min|default_if_none:'' }}" placeholder="—">
+  </label>
+  <label>إلى
+    <input type="number" name="age_max" min="3" max="99" value="{{ age_max|default_if_none:'' }}" placeholder="—">
+  </label>
   <div class="st-who">
-    <label><input type="radio" name="who" value="both" {% if who == 'both' %}checked{% endif %} onchange="this.form.submit()"> الكل</label>
-    <label><input type="radio" name="who" value="students" {% if who == 'students' %}checked{% endif %} onchange="this.form.submit()"> الطلاب</label>
-    <label><input type="radio" name="who" value="staff" {% if who == 'staff' %}checked{% endif %} onchange="this.form.submit()"> الكادر فقط</label>
+    <label><input type="radio" name="who" value="both" {% if who == 'both' %}checked{% endif %}> الكل</label>
+    <label><input type="radio" name="who" value="students" {% if who == 'students' %}checked{% endif %}> الطلاب</label>
+    <label><input type="radio" name="who" value="staff" {% if who == 'staff' %}checked{% endif %}> الكادر فقط</label>
   </div>
-  <a href="{% url 'export_stats_pdf' %}?month={{ month_str }}&scope={{ scope }}&who={{ who }}"
+  <button type="submit" class="btn-primary st-apply">🔎 عرض</button>
+  <a href="{% url 'export_stats_pdf' %}?{{ request.GET.urlencode }}"
      class="btn-primary st-pdf" onclick="showToast('📄 جاري إنشاء التقرير…','info',3000)">📄 تصدير PDF</a>
 </form>
+{% if not has_birth_dates and sort == 'age' or not has_birth_dates and age_min is not None or not has_birth_dates and age_max is not None %}
+<div class="panel" style="font-size:13px;color:#9c8a71">ℹ️ لم يُدخَل تاريخ الميلاد لأي طالب بعد — أضفه من «لوحة التحكم ← تعديل الطالب» أو عبر استيراد Excel ليعمل الفرز/الفلترة حسب العمر.</div>
+{% endif %}
 
 {% if students_stats %}
-  {% include "halaqat/_stats_block.html" with kind="students" st=students_stats title="👥 الطلاب" people_title="الطلاب الأكثر غياباً" %}
+  {% include "halaqat/_stats_block.html" with kind="students" st=students_stats title="👥 الطلاب" people_title="سجل الطلاب" %}
 {% endif %}
 {% if staff_stats %}
   {% include "halaqat/_stats_block.html" with kind="staff" st=staff_stats title="👨‍🏫 الكادر" people_title="سجل الكادر" %}
 {% endif %}
 
+<script>
+/* مخططات SVG خفيفة بدون مكتبات خارجية: أعمدة مكدّسة 100% + خط نسبة الحضور */
+(function () {
+  const COLORS = {present: '#5A9367', late: '#D9A441', absent: '#B5544B', excused: '#6B8CAE'};
+  const LBL = {present: 'حاضر', late: 'تأخر', absent: 'غائب', excused: 'إذن'};
+  const KEYS = ['present', 'late', 'absent', 'excused'];
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (n, a, parent) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (parent) parent.appendChild(e); return e; };
+
+  function timeline(box, data) {
+    const n = data.length; if (!n) return;
+    const W = Math.max(640, n * 16), H = 230, L = 34, R = 8, T = 12, B = 34;
+    const pw = W - L - R, ph = H - T - B, slot = pw / n, bw = Math.max(3, slot * 0.72);
+    const svg = el('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', direction: 'ltr', style: 'direction:ltr'});
+    for (const v of [0, 25, 50, 75, 100]) {
+      const y = T + ph - v / 100 * ph;
+      el('line', {x1: L, x2: W - R, y1: y, y2: y, stroke: '#eadfcd', 'stroke-width': 1}, svg);
+      el('text', {x: L - 4, y: y + 3, 'font-size': 9, fill: '#9c8a71', 'text-anchor': 'end'}, svg).textContent = v + '%';
+    }
+    const pts = [];
+    const every = Math.ceil(n / 31);
+    data.forEach((d, i) => {
+      const x = W - R - (i + 1) * slot + (slot - bw) / 2;       // الأقدم يميناً (اتجاه عربي)
+      const g = el('g', {}, svg);
+      const tip = el('title', {}, g);
+      tip.textContent = `${d.date} — ` + (d.total ? KEYS.map(k => `${LBL[k]} ${d['pct_' + k]}% (${d[k]})`).join(' · ') +
+        (d.rate !== null ? ` — نسبة الحضور ${d.rate}%` : '') : 'لا سجلات');
+      if (!d.total) {
+        el('rect', {x, y: T, width: bw, height: ph, fill: '#f4efe6', rx: 2}, g);
+      } else {
+        let y = T + ph;
+        for (const k of KEYS) {
+          const h = d[k] / d.total * ph;
+          if (h > 0) { y -= h; el('rect', {x, y, width: bw, height: h, fill: COLORS[k]}, g); }
+        }
+        if (d.rate !== null) pts.push([x + bw / 2, T + ph - d.rate / 100 * ph]);
+      }
+      if (i % every === 0) {
+        el('text', {x: x + bw / 2, y: H - B + 13, 'font-size': 9, fill: '#7a6a55', 'text-anchor': 'middle'}, svg).textContent = d.label;
+      }
+    });
+    if (pts.length > 1) {
+      el('polyline', {points: pts.map(p => p.join(',')).join(' '), fill: 'none', stroke: '#4A3420', 'stroke-width': 1.6, 'stroke-dasharray': '4 3'}, svg);
+    }
+    pts.forEach(p => el('circle', {cx: p[0], cy: p[1], r: 2.2, fill: '#4A3420'}, svg));
+    box.appendChild(svg);
+  }
+
+  function rates(box, rows) {
+    rows = rows.filter(r => r.total); if (!rows.length) return;
+    const rowH = 24, W = 640, L = 170, R = 50, T = 6;
+    const H = T * 2 + rows.length * rowH;
+    const svg = el('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', direction: 'ltr', style: 'direction:ltr'});
+    const pw = W - L - R;
+    rows.forEach((r, i) => {
+      const y = T + i * rowH;
+      const g = el('g', {}, svg);
+      el('title', {}, g).textContent = `${r.label} — ` + KEYS.map(k => `${LBL[k]} ${r['pct_' + k]}%`).join(' · ');
+      // الاسم يميناً، والشريط يمتد لليسار
+      el('text', {x: W - 4, y: y + 16, 'font-size': 11, fill: '#4A3420', 'text-anchor': 'end'}, g).textContent =
+        r.label.length > 24 ? r.label.slice(0, 23) + '…' : r.label;
+      let x = W - L;
+      for (const k of KEYS) {
+        const w = r[k] / r.total * pw;
+        if (w > 0) { x -= w; el('rect', {x, y: y + 5, width: w, height: 14, fill: COLORS[k]}, g); }
+      }
+      el('text', {x: R - 6, y: y + 16, 'font-size': 11, 'font-weight': 700, fill: '#4A3420', 'text-anchor': 'end'}, g)
+        .textContent = r.rate !== null ? r.rate + '%' : '—';
+    });
+    box.appendChild(svg);
+  }
+
+  document.querySelectorAll('[data-chart]').forEach(box => {
+    const data = JSON.parse(document.getElementById(box.dataset.src).textContent);
+    try { (box.dataset.chart === 'timeline' ? timeline : rates)(box, data); }
+    catch (e) { box.textContent = 'تعذّر رسم المخطط'; }
+  });
+})();
+</script>
 {% endblock %}

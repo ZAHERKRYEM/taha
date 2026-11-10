@@ -1,5 +1,5 @@
 {% extends "halaqat/base.html" %}
-{% block title %}ترحيل قاعدة البيانات — مسجد طه{% endblock %}
+{% block title %}استيراد بيانات Excel — مسجد طه{% endblock %}
 {% block content %}
 
 <style>
@@ -96,14 +96,15 @@
 <div class="mig-wrap">
 
   <div class="mig-header">
-    <h2>🔄 ترحيل قاعدة البيانات</h2>
-    <p>استيراد النسخة الاحتياطية (Excel) إلى PostgreSQL</p>
+    <h2>📥 استيراد بيانات من Excel</h2>
+    <p>استيراد ملف Excel صادر مسبقاً عن النظام (النسخة المرسلة لتلغرام أو المُنزّلة من
+      <a href="{% url 'send_all_data_telegram' %}?download=1" style="color:#B17F4A">⬇️ تنزيل نسخة Excel الآن</a>)</p>
   </div>
 
   {# ── نتائج ناجحة (بعد POST ناجح بدون AJAX) ── #}
   {% if migration_done %}
     <div class="results-card">
-      <h3>✅ اكتمل الترحيل بنجاح</h3>
+      <h3>✅ اكتمل الاستيراد بنجاح (السجلات المُضافة)</h3>
       <table class="results-table">
         {% for label, count in results %}
         <tr><td>{{ label }}</td><td>{{ count }} سجل</td></tr>
@@ -123,7 +124,7 @@
     {# إحصائيات PostgreSQL الحالية #}
     {% if pg_stats %}
     <div class="pg-stats">
-      <h4>📊 بيانات PostgreSQL الحالية</h4>
+      <h4>📊 البيانات الحالية في قاعدة البيانات</h4>
       <div class="pg-stats-grid">
         {% for label, count in pg_stats %}
         <div class="pg-stat-item">
@@ -132,11 +133,7 @@
         </div>
         {% endfor %}
       </div>
-      {% if total_pg > 0 %}
-      <div style="margin-top:10px; font-size:12px; color:#c0392b; font-weight:600;">
-        ⚠️ سيتم مسح هذه البيانات واستبدالها بمحتوى الملف.
-      </div>
-      {% endif %}
+
     </div>
     {% endif %}
 
@@ -156,12 +153,25 @@
                onchange="onFileChosen(this)">
       </div>
 
-      <div class="warn-box">
-        ⚠️ <strong>تنبيه:</strong> ستُمسح جميع بيانات PostgreSQL الحالية ويُعاد بناؤها
+      <div class="pg-stats" style="display:flex;flex-direction:column;gap:10px">
+        <h4 style="margin:0">طريقة الاستيراد</h4>
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+          <input type="radio" name="mode" value="merge" checked onchange="refreshBtn()">
+          <span><b>دمج مع البيانات الحالية</b> (موصى به) — يضيف الطلاب والحلقات وسجلات الحضور والسبر غير الموجودة فقط،
+            ولا يحذف أو يغيّر أي سجل حالي (يُكمل الحقول الفارغة فقط مثل الهاتف وتاريخ الميلاد).</span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+          <input type="radio" name="mode" value="replace" onchange="refreshBtn()">
+          <span><b>استبدال كامل</b> — يمسح كل البيانات الحالية ثم يبني القاعدة من الملف.</span>
+        </label>
+      </div>
+
+      <div class="warn-box" id="replace-warn" style="display:none">
+        ⚠️ <strong>تنبيه:</strong> ستُمسح جميع البيانات الحالية ويُعاد بناؤها
         من ملف Excel. العملية <strong>لا يمكن التراجع عنها</strong>.
       </div>
 
-      <label class="confirm-box" for="confirm-check">
+      <label class="confirm-box" for="confirm-check" id="confirm-box" style="display:none">
         <input type="checkbox" id="confirm-check"
                onchange="refreshBtn()">
         <span>أفهم أن البيانات الحالية ستُحذف وتُستبدل، وأريد المتابعة.</span>
@@ -169,8 +179,8 @@
 
       <div class="action-row">
         <button type="submit" id="migrate-btn" class="btn-migrate" disabled
-                data-load-text="جاري الترحيل…">
-          🔄 ترحيل البيانات الآن
+                data-load-text="جاري الاستيراد…">
+          📥 استيراد البيانات الآن
         </button>
         <a href="{% url 'developer_page' %}" class="btn-back">← إلغاء</a>
       </div>
@@ -203,7 +213,12 @@ function onFileChosen(input) {
 }
 
 function refreshBtn() {
-  const ok = fileChosen && document.getElementById('confirm-check').checked;
+  const replace = document.querySelector('input[name=mode]:checked').value === 'replace';
+  document.getElementById('replace-warn').style.display = replace ? 'block' : 'none';
+  document.getElementById('confirm-box').style.display = replace ? 'flex' : 'none';
+  const btn = document.getElementById('migrate-btn');
+  btn.style.background = replace ? '' : '#B17F4A';
+  const ok = fileChosen && (!replace || document.getElementById('confirm-check').checked);
   document.getElementById('migrate-btn').disabled = !ok;
 }
 
@@ -225,7 +240,7 @@ if (zone) {
 
 async function runMigration(e) {
   e.preventDefault();
-  showOverlay('🔄 جاري قراءة الملف وترحيل البيانات…');
+  showOverlay('📥 جاري قراءة الملف واستيراد البيانات…');
 
   try {
     const form   = document.getElementById('migrate-form');
@@ -245,7 +260,7 @@ async function runMigration(e) {
       ).join('');
       document.getElementById('migrate-result').innerHTML = `
         <div class="results-card">
-          <h3>✅ اكتمل الترحيل بنجاح</h3>
+          <h3>✅ اكتمل الاستيراد بنجاح (السجلات المُضافة)</h3>
           <table class="results-table">${rows}</table>
           <div class="total-count">الإجمالي: ${data.total} سجل</div>
         </div>
@@ -256,7 +271,7 @@ async function runMigration(e) {
         </div>`;
       document.getElementById('migrate-result').style.display = 'block';
       document.getElementById('migrate-form').style.display   = 'none';
-      showToast('✅ تم الترحيل بنجاح!', 'success', 5000);
+      showToast('✅ تم الاستيراد بنجاح!', 'success', 5000);
     } else {
       showToast(data.error ?? '❌ فشل الترحيل', 'error', 8000);
       document.getElementById('migrate-btn').disabled = false;

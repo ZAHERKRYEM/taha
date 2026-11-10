@@ -52,15 +52,17 @@ class CircleForm(forms.ModelForm):
 class StudentForm(forms.ModelForm):
     class Meta:
         model = Student
-        fields = ['name', 'circle', 'phone', 'notes']
+        fields = ['name', 'circle', 'birth_date', 'phone', 'notes']
         labels = {
             'name': 'اسم الطالب',
             'circle': 'الحلقة',
+            'birth_date': 'تاريخ الميلاد',
             'phone': 'رقم الهاتف',
             'notes': 'ملاحظات',
         }
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'الاسم الكامل'}),
+            'birth_date': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
             'phone': forms.TextInput(attrs={'placeholder': 'رقم الهاتف (اختياري)'}),
             'notes': forms.TextInput(attrs={'placeholder': 'رقم ولي الأمر، ملاحظات... (اختياري)'}),
         }
@@ -142,3 +144,18 @@ class CourseForm(forms.ModelForm):
             teacher, _ = Teacher.objects.get_or_create(name=new_name.strip())
             course.teachers.add(teacher)
         return course
+
+
+class ViewerAccountForm(forms.Form):
+    """إنشاء حساب «مشاهد» يرى الإحصائيات والسبر فقط."""
+    username = forms.CharField(label='اسم المستخدم', max_length=150,
+                               widget=forms.TextInput(attrs={'placeholder': 'مثال: mushrif1', 'autocomplete': 'off'}))
+    password = forms.CharField(label='كلمة المرور', min_length=6,
+                               widget=forms.PasswordInput(attrs={'autocomplete': 'new-password'}))
+
+    def clean_username(self):
+        from django.contrib.auth import get_user_model
+        name = self.cleaned_data['username'].strip()
+        if get_user_model().objects.filter(username=name).exists():
+            raise forms.ValidationError('اسم المستخدم مستخدم مسبقاً.')
+        return name

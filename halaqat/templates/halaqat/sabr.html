@@ -4,7 +4,7 @@
 
 <div class="page-header">
   <h2>📝 السبر</h2>
-  <div class="desc">اكتب اسم الطالب لتعرف آخر سبر قام به، ثم سجّل سبراً جديداً.</div>
+  <div class="desc">اكتب اسم الطالب لتعرف آخر سبر قام به{% if not read_only %}، ثم سجّل سبراً جديداً مع تفاصيله وملاحظاته{% endif %}.</div>
 </div>
 
 <div style="display:none">{% csrf_token %}</div>
@@ -12,13 +12,14 @@
 <div class="panel sb-search">
   <input type="text" id="sb-q" placeholder="🔍 اسم الطالب…" autocomplete="off">
   <div id="sb-results" class="sb-results" hidden></div>
+  <div class="sb-cache" id="sb-cache"></div>
 </div>
 
 <div id="sb-card" hidden>
   <div class="panel">
     <div class="sb-head">
       <div>
-        <div class="sb-name" id="sb-name"></div>
+        <a class="sb-name student-link" id="sb-name" title="صفحة حضور الطالب"></a>
         <div class="sb-sub" id="sb-circle"></div>
       </div>
       <a id="sb-profile" class="qs-btn" style="text-decoration:none">👤 الملف</a>
@@ -26,6 +27,10 @@
 
     <div class="sb-last" id="sb-last"></div>
 
+    {% if not read_only %}
+    <label style="display:block;margin:10px 0;font-size:12px;color:#7a6a55">تفاصيل السبر والملاحظات (اختياري)
+      <textarea id="sb-notes" class="sb-notes" placeholder="مثال: سبر جزء عمّ — 3 أخطاء تجويد، يحتاج مراجعة سورة النبأ…"></textarea>
+    </label>
     <div class="sb-new">
       <label>تاريخ السبر الجديد
         <input type="date" id="sb-date" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
@@ -33,6 +38,7 @@
       <button id="sb-add" class="btn-primary" data-load-text="جاري التسجيل…" onclick="addSabr(this)">➕ تسجيل سبر</button>
     </div>
     <div class="sb-hint">التاريخ الافتراضي هو اليوم، غيّره إن كان السبر في يوم آخر.</div>
+    {% endif %}
   </div>
 
   <div class="panel">
@@ -43,6 +49,7 @@
 
 <script>
 const TODAY = "{{ today|date:'Y-m-d' }}";
+const READ_ONLY = {{ read_only|yesno:"true,false" }};
 let currentId = null, searchTimer = null, searchSeq = 0;
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -74,15 +81,18 @@ $('sb-q').addEventListener('input', () => {
   clearTimeout(searchTimer);
   const q = $('sb-q').value.trim();
   if (!q) { $('sb-results').hidden = true; return; }
-  searchTimer = setTimeout(() => runSearch(q), 200);
+  searchTimer = setTimeout(() => runSearch(q), 60);
 });
 
 async function runSearch(q) {
   const seq = ++searchSeq;
   try {
-    const res = await fetch('/search-students/?q=' + encodeURIComponent(q));
-    const data = await res.json();
+    // البحث محلياً في المتصفح (أسماء الطلاب مخزّنة في كاش المتصفح)
+    const results = window.StudentIndex
+      ? await StudentIndex.search(q, 15)
+      : (await (await fetch('/search-students/?q=' + encodeURIComponent(q))).json()).results;
     if (seq !== searchSeq) return;           // تجاهل النتائج القديمة
+    const data = {results};
     const box = $('sb-results');
     if (!data.results.length) {
       box.innerHTML = '<div class="sb-empty">لا يوجد طالب بهذا الاسم</div>';
@@ -113,21 +123,29 @@ function render(d) {
   currentId = d.student.id;
   $('sb-card').hidden = false;
   $('sb-name').textContent = d.student.name;
-  $('sb-circle').textContent = 'حلقة ' + d.student.circle;
+  $('sb-circle').textContent = d.student.circle.startsWith('حلقة') ? d.student.circle : 'حلقة ' + d.student.circle;
   $('sb-profile').href = '/students/' + d.student.id + '/profile/';
-  $('sb-date').value = TODAY;
+  $('sb-name').href = '/students/' + d.student.id + '/profile/';
+  if (!READ_ONLY) { $('sb-date').value = TODAY; $('sb-notes').value = ''; }
 
   $('sb-last').innerHTML = d.last
-    ? `<span class="sb-last-lbl">آخر سبر</span><b>${esc(d.last.date_display)}</b><span class="sb-ago">${agoText(d.last.days_ago)}</span>`
+    ? `<span class="sb-last-lbl">آخر سبر</span><b>${esc(d.last.date_display)}</b><span class="sb-ago">${agoText(d.last.days_ago)}</span>` +
+      (d.last.notes ? `<div class="sb-row-notes" style="margin-top:6px">${esc(d.last.notes)}</div>` : '')
     : `<span class="sb-none">لم يُسجَّل له أي سبر بعد</span>`;
 
   $('sb-total').textContent = d.total > d.history.length ? `(آخر ${d.history.length} من ${d.total})` : (d.total ? `(${d.total})` : '');
-  $('sb-history').innerHTML = d.history.length ? d.history.map(h => `
+  $('sb-history').innerHTML = d.history.length ? d.history.map(h => READ_ONLY ? `
+    <div class="sb-row" data-id="${h.id}">
+      <b>${esc(h.date_display)}</b>
+      <span class="sb-ago">${agoText(h.days_ago)}</span>
+      ${h.notes ? `<div class="sb-row-notes">${esc(h.notes)}</div>` : ''}
+    </div>` : `
     <div class="sb-row" data-id="${h.id}">
       <input type="date" value="${h.date}" max="${TODAY}">
       <span class="sb-ago">${agoText(h.days_ago)}</span>
-      <button type="button" class="qs-btn" data-act="save" title="حفظ التاريخ">💾</button>
+      <button type="button" class="qs-btn" data-act="save" title="حفظ التعديل">💾</button>
       <button type="button" class="qs-btn" data-act="del" title="حذف">🗑</button>
+      <textarea class="sb-notes sb-row-edit" placeholder="تفاصيل السبر والملاحظات…">${esc(h.notes || '')}</textarea>
     </div>`).join('') : '<p style="font-size:13px;color:#9c8a71;margin:0">لا يوجد سجل بعد.</p>';
 }
 
@@ -136,7 +154,7 @@ async function addSabr(btn) {
   if (!currentId) return;
   setBtnLoading(btn, true);
   try {
-    render(await api('/sabr/student/' + currentId + '/add/', { date: $('sb-date').value }));
+    render(await api('/sabr/student/' + currentId + '/add/', { date: $('sb-date').value, notes: $('sb-notes').value }));
     showToast('✅ تم تسجيل السبر', 'success');
   } catch (e) { showToast('❌ ' + e.message, 'error'); }
   finally { setBtnLoading(btn, false); }
@@ -148,8 +166,9 @@ $('sb-history').addEventListener('click', async e => {
   const row = btn.closest('.sb-row'), id = row.dataset.id;
   try {
     if (btn.dataset.act === 'save') {
-      render(await api('/sabr/' + id + '/update/', { date: row.querySelector('input').value }));
-      showToast('✅ تم تعديل التاريخ', 'success');
+      render(await api('/sabr/' + id + '/update/', {
+        date: row.querySelector('input').value, notes: row.querySelector('textarea').value }));
+      showToast('✅ تم حفظ التعديل', 'success');
     } else {
       if (!confirm('حذف هذا السبر؟')) return;
       render(await api('/sabr/' + id + '/delete/', {}));
@@ -160,6 +179,11 @@ $('sb-history').addEventListener('click', async e => {
 
 document.addEventListener('click', e => {
   if (!e.target.closest('.sb-search')) $('sb-results').hidden = true;
+});
+
+if (window.StudentIndex) StudentIndex.refresh().then(() => {
+  const n = StudentIndex.count();
+  if (n) $('sb-cache').textContent = `⚡ البحث يتم محلياً على جهازك (${n} طالباً مخزّنين في المتصفح)`;
 });
 </script>
 {% endblock %}

@@ -19,7 +19,8 @@ from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
     Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr,
 )
-from .forms import CircleForm, StudentForm, CourseForm, WhatsAppAbsentForm
+from .forms import CircleForm, StudentForm, CourseForm, WhatsAppAbsentForm, ViewerAccountForm
+from .roles import VIEWER_GROUP, is_viewer
 from .telegram_utils import send_telegram_message, send_telegram_document_bytes
 from .whatsapp_utils import normalize_chat_id, send_whatsapp_text
 
@@ -66,6 +67,38 @@ def circles_list(request):
     return render(request, 'halaqat/circles_list.html', context)
 
 
+
+HISTORY_SESSIONS = 10   # عدد الجلسات السابقة المعروضة مباشرة بجانب كل طالب
+
+
+def _attendance_history(model, scope, student_ids, before_date, n=HISTORY_SESSIONS):
+    """
+    آخر n جلسة (أيام سُجِّل فيها حضور ضمن نفس الحلقة/الدورة) قبل التاريخ المحدد،
+    مع حالة كل طالب في كل جلسة. scope مثل {'circle': circle} أو {'course': course}.
+    يعيد {student_id: {'cells': [...], 'rate': int|None}}.
+    """
+    dates = list(
+        model.objects.filter(date__lt=before_date, **scope)
+        .values_list('date', flat=True).distinct().order_by('-date')[:n]
+    )
+    dates.reverse()
+    by_student = {}
+    if dates:
+        for sid, d, st in model.objects.filter(
+            date__in=dates, student_id__in=student_ids, **scope
+        ).values_list('student_id', 'date', 'status'):
+            by_student.setdefault(sid, {})[d] = st
+
+    out = {}
+    for sid in student_ids:
+        recs = by_student.get(sid, {})
+        cells = [{'date': d, 'status': recs.get(d)} for d in dates]
+        counted = [c['status'] for c in cells if c['status'] in ('present', 'late', 'absent')]
+        rate = round(sum(1 for x in counted if x != 'absent') / len(counted) * 100) if counted else None
+        out[sid] = {'cells': cells, 'rate': rate}
+    return out
+
+
 @login_required
 def circle_detail(request, circle_id):
     circle = get_object_or_404(Circle, pk=circle_id)
@@ -87,11 +120,13 @@ def circle_detail(request, circle_id):
         for a in Attendance.objects.filter(circle=circle, date=selected_date)
     }
 
+    history = _attendance_history(Attendance, {'circle': circle}, [s.id for s in students], selected_date)
     student_rows = []
     for student in students:
         student_rows.append({
             'student': student,
             'status': existing.get(student.id, ''),  # فارغ = لم يُسجَّل بعد
+            'history': history.get(student.id),
         })
 
     present_count = sum(1 for s in student_rows if s['status'] == 'present')
@@ -235,11 +270,14 @@ def course_detail(request, course_id):
         for a in CourseAttendance.objects.filter(course=course, date=selected_date)
     }
 
+    students = list(students)
+    history = _attendance_history(CourseAttendance, {'course': course}, [s.id for s in students], selected_date)
     student_rows = []
     for student in students:
         student_rows.append({
             'student': student,
             'status': existing.get(student.id, ''),
+            'history': history.get(student.id),
         })
 
     present_count = sum(1 for s in student_rows if s['status'] == 'present')
@@ -510,6 +548,7 @@ def admin_panel(request):
     student_form = StudentForm()
     course_form = CourseForm()
     whatsapp_form = WhatsAppAbsentForm()
+    viewer_form = ViewerAccountForm()
 
     if request.method == 'POST':
         if 'submit_circle' in request.POST:
@@ -529,6 +568,20 @@ def admin_panel(request):
             if course_form.is_valid():
                 course_form.save()
                 messages.success(request, 'تمت إضافة الدورة/الدرس بنجاح.')
+                return redirect('admin_panel')
+        elif 'submit_viewer' in request.POST:
+            viewer_form = ViewerAccountForm(request.POST)
+            if viewer_form.is_valid():
+                from django.contrib.auth import get_user_model
+                from django.contrib.auth.models import Group
+                group, _ = Group.objects.get_or_create(name=VIEWER_GROUP)
+                user = get_user_model().objects.create_user(
+                    username=viewer_form.cleaned_data['username'],
+                    password=viewer_form.cleaned_data['password'],
+                )
+                user.groups.add(group)
+                messages.success(request, f'تم إنشاء حساب المشاهد «{user.username}».')
+                _log_admin_action(request, f'👁 إنشاء حساب مشاهد: {user.username}')
                 return redirect('admin_panel')
         elif 'submit_whatsapp_absent' in request.POST:
             whatsapp_form = WhatsAppAbsentForm(request.POST)
@@ -552,12 +605,30 @@ def admin_panel(request):
         'student_form': student_form,
         'course_form': course_form,
         'whatsapp_form': whatsapp_form,
+        'viewer_form': viewer_form,
+        'viewers': _viewer_users(),
         'circles': Circle.objects.select_related('teacher').order_by('display_order', 'name', 'id'),
         'students': Student.objects.select_related('circle').all(),
         'courses': Course.objects.prefetch_related('teachers', 'students').all(),
         'active_nav': 'admin',
     }
     return render(request, 'halaqat/admin_panel.html', context)
+
+
+def _viewer_users():
+    from django.contrib.auth import get_user_model
+    return get_user_model().objects.filter(groups__name=VIEWER_GROUP, is_superuser=False).order_by('username')
+
+
+@login_required
+@require_POST
+def delete_viewer(request, pk):
+    user = get_object_or_404(_viewer_users(), pk=pk)
+    name = user.username
+    user.delete()
+    messages.success(request, f'تم حذف حساب المشاهد «{name}».')
+    _log_admin_action(request, f'🗑 حذف حساب مشاهد: {name}')
+    return redirect('admin_panel')
 
 
 @login_required
@@ -662,10 +733,12 @@ def absentees_list(request):
 
         grouped = []
         for circle, students in groups.items():
+            history = _attendance_history(Attendance, {'circle': circle}, [x.id for x in students], selected_date)
             rows = []
             for student in students:
                 rows.append({
                     'student': student,
+                    'history': history.get(student.id),
                     'status': status,
                     'week_absences': student.absence_count(7, selected_date),
                     'month_absences': student.absence_count(30, selected_date),
@@ -713,6 +786,32 @@ def search_students(request):
             for s in students
         ]
     return JsonResponse({'results': results})
+
+
+@login_required
+def students_index(request):
+    """
+    قائمة كل الطلاب (معرّف، اسم، حلقة) ليُخزّنها المتصفح محلياً (localStorage)
+    فيتم البحث بالكامل داخل المتصفح بدل إرسال طلب للسيرفر مع كل حرف.
+    ?v=<نسخة> : إن طابقت النسخة الحالية يُعاد {"same": true} فقط لتوفير البيانات.
+    """
+    import hashlib
+    import json
+    rows = list(
+        Student.objects.select_related('circle')
+        .order_by('name')
+        .values_list('id', 'name', 'circle_id', 'circle__name')
+    )
+    payload = json.dumps(rows, ensure_ascii=False, separators=(',', ':'))
+    version = hashlib.sha1(payload.encode('utf-8')).hexdigest()[:16]
+    if request.GET.get('v') == version:
+        return JsonResponse({'same': True, 'v': version})
+    resp = HttpResponse(
+        '{"v":"%s","students":%s}' % (version, payload),
+        content_type='application/json; charset=utf-8',
+    )
+    resp['Cache-Control'] = 'private, no-cache'
+    return resp
 
 
 # ============================================================
@@ -971,70 +1070,81 @@ def send_all_data_telegram(request):
     # ── ورقة 1: الأساتذة ──────────────────────────────────────
     ws_teachers = wb.active
     ws_teachers.title = 'الأساتذة'
-    _style_sheet(ws_teachers, ['م', 'اسم الأستاذ', 'رقم الهاتف'], [5, 30, 20])
+    # أعمدة «المعرّف» في آخر كل ورقة تجعل إعادة الاستيراد دقيقة حتى مع تكرار الأسماء
+    _style_sheet(ws_teachers, ['م', 'اسم الأستاذ', 'رقم الهاتف', 'المعرّف'], [5, 30, 20, 9])
     for i, t in enumerate(Teacher.objects.order_by('name'), 1):
-        ws_teachers.append([i, t.name, t.phone or '—'])
+        ws_teachers.append([i, t.name, t.phone or '—', t.id])
 
     # ── ورقة 2: الحلقات ───────────────────────────────────────
     ws_circles = wb.create_sheet('الحلقات')
     _style_sheet(ws_circles,
-                 ['م', 'اسم الحلقة', 'الأستاذ', 'عدد الطلاب', 'الوصف', 'ترتيب العرض'],
-                 [5, 28, 28, 12, 35, 13])
+                 ['م', 'اسم الحلقة', 'الأستاذ', 'عدد الطلاب', 'الوصف', 'ترتيب العرض', 'المعرّف', 'معرّف الأستاذ'],
+                 [5, 28, 28, 12, 35, 13, 9, 11])
     for i, c in enumerate(Circle.objects.select_related('teacher').order_by('display_order', 'name'), 1):
         ws_circles.append([i, c.name,
                            c.teacher.name if c.teacher else '—',
-                           c.student_count, c.description or '—', c.display_order])
+                           c.student_count, c.description or '—', c.display_order, c.id, c.teacher_id or ''])
 
     # ── ورقة 3: الطلاب ────────────────────────────────────────
     ws_students = wb.create_sheet('الطلاب')
     _style_sheet(ws_students,
-                 ['م', 'اسم الطالب', 'الحلقة', 'رقم الهاتف', 'ملاحظات', 'تاريخ الانضمام'],
-                 [5, 30, 28, 18, 32, 15])
+                 ['م', 'اسم الطالب', 'الحلقة', 'رقم الهاتف', 'ملاحظات', 'تاريخ الانضمام', 'تاريخ الميلاد', 'المعرّف', 'معرّف الحلقة'],
+                 [5, 30, 28, 18, 32, 15, 15, 9, 11])
     for i, s in enumerate(
         Student.objects.select_related('circle').order_by('circle__display_order', 'circle__name', 'name'), 1
     ):
         ws_students.append([i, s.name, s.circle.name,
                             s.phone or '—', s.notes or '—',
-                            s.joined_at.date().isoformat()])
+                            s.joined_at.date().isoformat(),
+                            s.birth_date.isoformat() if s.birth_date else '—',
+                            s.id, s.circle_id])
 
     # ── ورقة 4: سجل حضور الحلقات ─────────────────────────────
     ws_att = wb.create_sheet('حضور الحلقات')
     _style_sheet(ws_att,
-                 ['التاريخ', 'الحلقة', 'النوع', 'الاسم', 'الحالة'],
-                 [14, 28, 10, 30, 10])
+                 ['التاريخ', 'الحلقة', 'النوع', 'الاسم', 'الحالة', 'معرّف الشخص', 'معرّف الحلقة'],
+                 [14, 28, 10, 30, 10, 11, 11])
     for ta in TeacherAttendance.objects.select_related('teacher', 'circle').order_by('-date', 'circle__name'):
         ws_att.append([ta.date.isoformat(), ta.circle.name, 'أستاذ',
-                       ta.teacher.name, ta.get_status_display()])
+                       ta.teacher.name, ta.get_status_display(), ta.teacher_id, ta.circle_id])
     for a in Attendance.objects.select_related('student', 'circle').order_by('-date', 'circle__name', 'student__name'):
         ws_att.append([a.date.isoformat(), a.circle.name, 'طالب',
-                       a.student.name, a.get_status_display()])
+                       a.student.name, a.get_status_display(), a.student_id, a.circle_id])
 
     # ── ورقة 5: الدورات ──────────────────────────────────────
     ws_courses = wb.create_sheet('الدورات')
     _style_sheet(ws_courses,
-                 ['م', 'اسم الدورة', 'الأساتذة', 'عدد الطلاب', 'الوصف'],
-                 [5, 32, 32, 13, 35])
+                 ['م', 'اسم الدورة', 'الأساتذة', 'عدد الطلاب', 'الوصف', 'المعرّف', 'معرّفات الأساتذة', 'معرّفات الطلاب'],
+                 [5, 32, 32, 13, 35, 9, 14, 20])
     for i, c in enumerate(Course.objects.prefetch_related('teachers', 'students').order_by('name'), 1):
         teachers_str = '، '.join(t.name for t in c.teachers.all()) or '—'
-        ws_courses.append([i, c.name, teachers_str, c.student_count, c.description or '—'])
+        ws_courses.append([i, c.name, teachers_str, c.student_count, c.description or '—', c.id,
+                           ','.join(str(t.id) for t in c.teachers.all()),
+                           ','.join(str(x.id) for x in c.students.all())])
 
     # ── ورقة 6: سجل حضور الدورات ─────────────────────────────
     ws_catt = wb.create_sheet('حضور الدورات')
     _style_sheet(ws_catt,
-                 ['التاريخ', 'الدورة', 'النوع', 'الاسم', 'الحالة'],
-                 [14, 30, 10, 30, 10])
+                 ['التاريخ', 'الدورة', 'النوع', 'الاسم', 'الحالة', 'معرّف الشخص', 'معرّف الدورة'],
+                 [14, 30, 10, 30, 10, 11, 11])
     for cta in CourseTeacherAttendance.objects.select_related('teacher', 'course').order_by('-date', 'course__name'):
         ws_catt.append([cta.date.isoformat(), cta.course.name, 'أستاذ',
-                        cta.teacher.name, cta.get_status_display()])
+                        cta.teacher.name, cta.get_status_display(), cta.teacher_id, cta.course_id])
     for ca in CourseAttendance.objects.select_related('student', 'course').order_by('-date', 'course__name', 'student__name'):
         ws_catt.append([ca.date.isoformat(), ca.course.name, 'طالب',
-                        ca.student.name, ca.get_status_display()])
+                        ca.student.name, ca.get_status_display(), ca.student_id, ca.course_id])
+
+    # ── ورقة: التفقد العام للأساتذة ─────────────────────────
+    ws_gen = wb.create_sheet('التفقد العام')
+    _style_sheet(ws_gen, ['التاريخ', 'اسم الأستاذ', 'الحالة', 'معرّف الأستاذ'], [14, 30, 10, 11])
+    for g in TeacherDailyAttendance.objects.select_related('teacher').order_by('-date', 'teacher__name'):
+        ws_gen.append([g.date.isoformat(), g.teacher.name, g.get_status_display(), g.teacher_id])
 
     # ── ورقة 7: السبر ─────────────────────────────────────────
     ws_sabr = wb.create_sheet('السبر')
-    _style_sheet(ws_sabr, ['التاريخ', 'اسم الطالب', 'الحلقة'], [14, 30, 28])
+    _style_sheet(ws_sabr, ['التاريخ', 'اسم الطالب', 'الحلقة', 'التفاصيل والملاحظات', 'معرّف الطالب'], [14, 30, 28, 50, 11])
     for sb in Sabr.objects.select_related('student', 'student__circle').order_by('-date', 'student__name'):
-        ws_sabr.append([sb.date.isoformat(), sb.student.name, sb.student.circle.name])
+        ws_sabr.append([sb.date.isoformat(), sb.student.name, sb.student.circle.name, sb.notes or '', sb.student_id])
 
     # ── تجميع الملف وإرساله ───────────────────────────────────
     excel_buffer = io.BytesIO()
@@ -1051,6 +1161,15 @@ def send_all_data_telegram(request):
     )
     export_filename = f'masjid_taha_{today_str}.xlsx'
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+    # ?download=1 → تنزيل الملف مباشرة بدل إرساله لتلغرام (يصلح لإعادة استيراده لاحقاً)
+    if request.GET.get('download'):
+        resp = HttpResponse(
+            excel_buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        resp['Content-Disposition'] = f'attachment; filename="{export_filename}"'
+        return resp
 
     ok = send_telegram_document_bytes(excel_buffer.getvalue(), export_filename, caption=caption)
 
@@ -1257,227 +1376,21 @@ def migrate_sqlite_to_postgres(request):
         messages.error(request, err)
         return redirect('migrate_sqlite_to_postgres')
 
-    def _sheet(name):
-        """يعيد صفوف الورقة (بدون صف العناوين)، أو [] إذا لم توجد."""
-        if name not in wb.sheetnames:
-            return []
-        return list(wb[name].iter_rows(min_row=2, values_only=True))
-
-    results = []
-
+    from .excel_import import import_workbook
+    mode = 'replace' if request.POST.get('mode') == 'replace' else 'merge'
+    mode_label = 'استبدال كامل' if mode == 'replace' else 'دمج'
     try:
-        with transaction.atomic():
-
-            # ── 1. مسح PostgreSQL بالترتيب الآمن ──────────────────
-            TeacherDailyAttendance.objects.all().delete()
-            CourseTeacherAttendance.objects.all().delete()
-            CourseAttendance.objects.all().delete()
-            Course.objects.all().delete()        # يحذف M2M تلقائياً
-            TeacherAttendance.objects.all().delete()
-            Attendance.objects.all().delete()
-            Sabr.objects.all().delete()
-            Student.objects.all().delete()
-            Circle.objects.all().delete()
-            Teacher.objects.all().delete()
-
-            # ── 2. الأساتذة ────────────────────────────────────────
-            # أعمدة: م | اسم الأستاذ | رقم الهاتف
-            teacher_map = {}   # name → Teacher instance
-            objs = []
-            for row in _sheet('الأساتذة'):
-                if not row[1]:
-                    continue
-                name = str(row[1]).strip()
-                objs.append(Teacher(name=name, phone=_clean(row[2])))
-            Teacher.objects.bulk_create(objs)
-            for t in Teacher.objects.all():
-                teacher_map[t.name] = t
-            results.append(('الأساتذة', len(teacher_map)))
-
-            # ── 3. الحلقات ─────────────────────────────────────────
-            # أعمدة: م | اسم الحلقة | الأستاذ | عدد الطلاب | الوصف | ترتيب العرض
-            circle_map = {}    # name → Circle instance
-            objs = []
-            for row in _sheet('الحلقات'):
-                if not row[1]:
-                    continue
-                name        = str(row[1]).strip()
-                teacher     = teacher_map.get(str(row[2]).strip()) if row[2] else None
-                description = _clean(row[4])
-                try:
-                    order = int(row[5] or 0)
-                except (ValueError, TypeError):
-                    order = 0
-                objs.append(Circle(name=name, teacher=teacher,
-                                   description=description, display_order=order))
-            Circle.objects.bulk_create(objs)
-            for c in Circle.objects.select_related('teacher'):
-                circle_map[c.name] = c
-            results.append(('الحلقات', len(circle_map)))
-
-            # ── 4. الطلاب ──────────────────────────────────────────
-            # أعمدة: م | اسم الطالب | الحلقة | رقم الهاتف | ملاحظات | تاريخ الانضمام
-            student_map        = {}   # (name, circle_name) → Student
-            student_by_name    = {}   # name → Student  (للبحث السريع في حضور الدورات)
-            objs = []
-            meta = []   # (name, circle_name) لكل كائن بنفس الترتيب
-            for row in _sheet('الطلاب'):
-                if not row[1]:
-                    continue
-                name        = str(row[1]).strip()
-                circle_name = str(row[2]).strip() if row[2] else ''
-                circle      = circle_map.get(circle_name)
-                if not circle:
-                    continue
-                obj = Student(name=name, circle=circle,
-                              phone=_clean(row[3]), notes=_clean(row[4]))
-                # joined_at هو auto_now_add — نتجاوزه بتعيينه مباشرة
-                joined = _parse_date(row[5])
-                if joined:
-                    from datetime import datetime, timezone as dt_timezone
-                    obj.joined_at = datetime(joined.year, joined.month, joined.day,
-                                            tzinfo=dt_timezone.utc)
-                objs.append(obj)
-                meta.append((name, circle_name))
-            Student.objects.bulk_create(objs)
-            for s in Student.objects.select_related('circle'):
-                key = (s.name, s.circle.name)
-                student_map[key] = s
-                student_by_name.setdefault(s.name, s)   # أول تطابق
-            results.append(('الطلاب', len(student_map)))
-
-            # ── 4.5 السبر ──────────────────────────────────────────
-            # أعمدة: التاريخ | اسم الطالب | الحلقة   (الورقة اختيارية: نسخ قديمة بدونها)
-            sabr_objs = []
-            for row in _sheet('السبر'):
-                date_val = _parse_date(row[0])
-                name = str(row[1]).strip() if len(row) > 1 and row[1] else ''
-                circle_name = str(row[2]).strip() if len(row) > 2 and row[2] else ''
-                student = student_map.get((name, circle_name))
-                if date_val and student:
-                    sabr_objs.append(Sabr(student=student, date=date_val))
-            Sabr.objects.bulk_create(sabr_objs)
-            results.append(('السبر', len(sabr_objs)))
-
-            # ── 5. حضور الحلقات ────────────────────────────────────
-            # أعمدة: التاريخ | الحلقة | النوع | الاسم | الحالة
-            # النوع: 'طالب' أو 'أستاذ'
-            att_objs   = []
-            t_att_objs = []
-            for row in _sheet('حضور الحلقات'):
-                date_val    = _parse_date(row[0])
-                circle_name = str(row[1]).strip() if row[1] else ''
-                kind        = str(row[2]).strip() if row[2] else ''
-                name        = str(row[3]).strip() if row[3] else ''
-                status      = _status(row[4])
-                circle      = circle_map.get(circle_name)
-                if not date_val or not name or not circle:
-                    continue
-                if kind == 'طالب':
-                    student = student_map.get((name, circle_name))
-                    if student:
-                        att_objs.append(Attendance(
-                            student=student, circle=circle,
-                            date=date_val, status=status))
-                elif kind == 'أستاذ':
-                    teacher = teacher_map.get(name)
-                    if teacher:
-                        t_att_objs.append(TeacherAttendance(
-                            teacher=teacher, circle=circle,
-                            date=date_val, status=status))
-            Attendance.objects.bulk_create(att_objs, ignore_conflicts=True)
-            TeacherAttendance.objects.bulk_create(t_att_objs, ignore_conflicts=True)
-            results.append(('حضور الطلاب في الحلقات',    len(att_objs)))
-            results.append(('حضور الأساتذة في الحلقات',  len(t_att_objs)))
-
-            # ── 6. الدورات ─────────────────────────────────────────
-            # أعمدة: م | اسم الدورة | الأساتذة | عدد الطلاب | الوصف
-            # الأساتذة: أسماء مفصولة بـ '،'
-            course_map          = {}    # name → Course
-            course_teacher_names = {}   # course_name → [teacher_names]
-            objs = []
-            for row in _sheet('الدورات'):
-                if not row[1]:
-                    continue
-                name        = str(row[1]).strip()
-                teachers_str = str(row[2] or '').strip()
-                description = _clean(row[4])
-                t_names = [t.strip() for t in teachers_str.split('،')
-                           if t.strip() and t.strip() != '—']
-                objs.append(Course(name=name, description=description))
-                course_teacher_names[name] = t_names
-            Course.objects.bulk_create(objs)
-            for c in Course.objects.all():
-                course_map[c.name] = c
-                for t_name in course_teacher_names.get(c.name, []):
-                    t = teacher_map.get(t_name)
-                    if t:
-                        c.teachers.add(t)
-            results.append(('الدورات', len(course_map)))
-
-            # ── 7. حضور الدورات ────────────────────────────────────
-            # أعمدة: التاريخ | الدورة | النوع | الاسم | الحالة
-            ca_objs    = []
-            cta_objs   = []
-            enrolled   = set()   # (course_id, student_id) لاستنتاج M2M
-            for row in _sheet('حضور الدورات'):
-                date_val    = _parse_date(row[0])
-                course_name = str(row[1]).strip() if row[1] else ''
-                kind        = str(row[2]).strip() if row[2] else ''
-                name        = str(row[3]).strip() if row[3] else ''
-                status      = _status(row[4])
-                course      = course_map.get(course_name)
-                if not date_val or not name or not course:
-                    continue
-                if kind == 'طالب':
-                    student = student_by_name.get(name)
-                    if student:
-                        ca_objs.append(CourseAttendance(
-                            student=student, course=course,
-                            date=date_val, status=status))
-                        enrolled.add((course.id, student.id))
-                elif kind == 'أستاذ':
-                    teacher = teacher_map.get(name)
-                    if teacher:
-                        cta_objs.append(CourseTeacherAttendance(
-                            teacher=teacher, course=course,
-                            date=date_val, status=status))
-            CourseAttendance.objects.bulk_create(ca_objs, ignore_conflicts=True)
-            CourseTeacherAttendance.objects.bulk_create(cta_objs, ignore_conflicts=True)
-            results.append(('حضور الدورات', len(ca_objs) + len(cta_objs)))
-
-            # ── 8. ربط طلاب الدورات M2M ────────────────────────────
-            # (مستنتجة من سجلات الحضور — الطلاب الذين لا توجد لهم سجلات حضور لن يُضافوا)
-            if enrolled:
-                from django.db import connection as pg_conn
-                engine = pg_conn.settings_dict.get('ENGINE', '')
-                with pg_conn.cursor() as cur:
-                    if 'postgresql' in engine:
-                        cur.executemany(
-                            'INSERT INTO halaqat_course_students (course_id, student_id)'
-                            ' VALUES (%s, %s) ON CONFLICT DO NOTHING',
-                            list(enrolled)
-                        )
-                    else:   # SQLite للاختبار
-                        cur.executemany(
-                            'INSERT OR IGNORE INTO halaqat_course_students (course_id, student_id)'
-                            ' VALUES (?, ?)',
-                            list(enrolled)
-                        )
-            results.append(('طلاب الدورات (مستنتجة)', len(enrolled)))
-
+        results = import_workbook(wb, mode=mode)
     except Exception as exc:
-        import traceback
-        tb = traceback.format_exc()
-        err = f'❌ فشل الترحيل — تم التراجع عن كل التغييرات:\n{exc}'
-        _log_admin_action(request, f'❌ فشل ترحيل Excel→PostgreSQL: {exc}')
+        err = f'❌ فشل الاستيراد — تم التراجع عن كل التغييرات:\n{exc}'
+        _log_admin_action(request, f'❌ فشل استيراد Excel ({mode_label}): {exc}')
         if is_ajax:
             return JsonResponse({'ok': False, 'error': str(err)}, status=400)
         messages.error(request, err)
         return redirect('migrate_sqlite_to_postgres')
 
     total = sum(c for _, c in results)
-    _log_admin_action(request, f'🔄 ترحيل Excel→PostgreSQL اكتمل ({total} سجل)')
+    _log_admin_action(request, f'📥 استيراد Excel ({mode_label}) اكتمل: أُضيف {total} سجل')
 
     if is_ajax:
         return JsonResponse({'ok': True, 'results': results, 'total': total})
@@ -1505,6 +1418,7 @@ def developer_page(request):
 # ============================================================
 
 _STAT_KEYS = ('present', 'late', 'absent', 'excused')
+_STAT_LABELS = {'present': 'حاضر', 'late': 'تأخر', 'absent': 'غائب', 'excused': 'إذن'}
 
 
 def _rate(counts):
@@ -1519,15 +1433,47 @@ def _blank_counts():
     return {k: 0 for k in _STAT_KEYS}
 
 
-def _stats_population(sources, start, end, top_limit=None):
+def _with_pcts(c):
+    """يضيف لكل حالة نسبتها المئوية من مجموع السجلات (pct_present ...) + المجموع + نسبة الحضور."""
+    total = sum(c[k] for k in _STAT_KEYS)
+    out = dict(c)
+    out['total'] = total
+    for k in _STAT_KEYS:
+        out['pct_' + k] = round(c[k] / total * 100) if total else 0
+    out['rate'] = _rate(c)
+    return out
+
+
+def _bucket_key(d, mode):
+    if mode == 'day':
+        return d
+    if mode == 'week':                       # الأسبوع يبدأ السبت
+        return d - datetime.timedelta(days=(d.weekday() + 2) % 7)
+    return d.replace(day=1)
+
+
+_MONTHS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+              'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+
+
+def _bucket_label(k, mode):
+    if mode == 'day':
+        return f'{k.day}/{k.month}'
+    if mode == 'week':
+        return f'{k.day}/{k.month}'
+    return f'{_MONTHS_AR[k.month - 1]} {k.year % 100:02d}'
+
+
+def _stats_population(sources, start, end, top_limit=None, sort='absence', student_meta=None):
     """
-    يجمّع إحصائيات فئة واحدة (طلاب أو كادر) من عدة مصادر سجلات.
+    يجمّع إحصائيات فئة واحدة (طلاب أو كادر) من عدة مصادر سجلات ضمن الفترة [start, end].
     كل مصدر: dict(qs, label, pid, pname, psub)  — label نص ثابت أو اسم حقل (يبدأ بـ '@').
+    كل الأرقام تُعرض كنسب مئوية (إلى جانب العدد) لتكون قابلة للمقارنة.
     """
     from collections import defaultdict
     total = _blank_counts()
     by_source = {}
-    daily = defaultdict(_blank_counts)
+    by_date = defaultdict(_blank_counts)
     people = {}
 
     for src in sources:
@@ -1540,74 +1486,135 @@ def _stats_population(sources, start, end, top_limit=None):
             pid, pname, psub, d, status = row[:5]
             if status not in total:
                 continue
-            label = (src.get('prefix', '') + str(row[5])) if label_is_field else src['label']
+            if label_is_field:
+                pre, val = src.get('prefix', ''), str(row[5])
+                label = val if val.startswith(pre.strip()) else pre + val   # تجنّب «حلقة حلقة …»
+            else:
+                label = src['label']
             total[status] += 1
             by_source.setdefault(label, _blank_counts())[status] += 1
-            daily[d][status] += 1
+            by_date[d][status] += 1
             p = people.setdefault(pid, {'id': pid, 'name': pname, 'sub': psub if src.get('psub') else '',
                                         **_blank_counts()})
             p[status] += 1
 
-    # صفوف المصادر
-    source_rows = []
-    for label in sorted(by_source):
-        c = by_source[label]
-        source_rows.append({'label': label, **c, 'total': sum(c.values()), 'rate': _rate(c)})
+    # صفوف المصادر (الأعلى حضوراً أولاً)
+    source_rows = [{'label': label, **_with_pcts(c)} for label, c in by_source.items()]
+    source_rows.sort(key=lambda r: (-(r['rate'] if r['rate'] is not None else -1), r['label']))
 
-    # الرسم اليومي (كل أيام الشهر)
-    days = []
-    cur = start
-    max_total = 1
-    while cur <= end:
-        c = daily.get(cur, _blank_counts())
-        t = sum(c.values())
-        max_total = max(max_total, t)
-        days.append({'date': cur, 'day': cur.day, **c, 'total': t})
-        cur += datetime.timedelta(days=1)
-    for d in days:
+    # الرسم: يومي حتى شهرين، أسبوعي حتى ~8 أشهر، ثم شهري
+    span = (end - start).days + 1
+    mode = 'day' if span <= 62 else ('week' if span <= 250 else 'month')
+    buckets = {}
+    if mode == 'day':
+        cur = start
+        while cur <= end:                  # كل أيام الفترة حتى غير المسجّلة (تظهر فارغة)
+            buckets[cur] = _blank_counts()
+            cur += datetime.timedelta(days=1)
+    for d, c in by_date.items():
+        b = buckets.setdefault(_bucket_key(d, mode), _blank_counts())
         for k in _STAT_KEYS:
-            d['h_' + k] = round(d[k] / max_total * 100, 1)
+            b[k] += c[k]
+    chart = []
+    for k in sorted(buckets):
+        c = _with_pcts(buckets[k])
+        chart.append({'label': _bucket_label(k, mode), 'date': k.isoformat(),
+                      **{x: c[x] for x in _STAT_KEYS}, 'total': c['total'], 'rate': c['rate'],
+                      **{'pct_' + x: c['pct_' + x] for x in _STAT_KEYS}})
 
-    # الأشخاص: الأكثر غياباً أولاً
+    # الأشخاص
     people_rows = []
     for p in people.values():
-        p['total'] = sum(p[k] for k in _STAT_KEYS)
-        p['rate'] = _rate(p)
+        p.update(_with_pcts({k: p[k] for k in _STAT_KEYS}))
+        if student_meta is not None:
+            meta = student_meta.get(p['id'], {})
+            p['age'] = meta.get('age')
+            p['circle_order'] = meta.get('circle_order', 9999)
         people_rows.append(p)
-    people_rows.sort(key=lambda p: (-p['absent'], -p['late'], p['name']))
+
+    def k_rate(p):
+        return p['rate'] if p['rate'] is not None else 101
+    sorters = {
+        'absence': lambda p: (-p['pct_absent'], -p['pct_late'], p['name']),
+        'rate': lambda p: (-(p['rate'] if p['rate'] is not None else -1), p['name']),
+        'name': lambda p: p['name'],
+        'age': lambda p: (p.get('age') is None, p.get('age') or 0, p['name']),
+        'circle': lambda p: (p.get('circle_order', 9999), p['sub'], k_rate(p), p['name']),
+    }
+    people_rows.sort(key=sorters.get(sort, sorters['absence']))
     shown = people_rows[:top_limit] if top_limit else people_rows
 
     return {
+        **_with_pcts(total),
         'counts': total,
-        'total': sum(total.values()),
-        'rate': _rate(total),
         'sources': source_rows,
-        'days': days,
+        'chart': chart,
+        'chart_mode': mode,
+        'session_days': len(by_date),
         'people': shown,
         'people_total': len(people_rows),
         'people_truncated': bool(top_limit and len(people_rows) > top_limit),
     }
 
 
-def _stats_context(request, top_limit=15):
+def _parse_iso(s):
+    try:
+        return datetime.date.fromisoformat((s or '').strip())
+    except ValueError:
+        return None
+
+
+def _stats_context(request, top_limit=None):
     """يقرأ الفلاتر من الطلب ويحسب سياق الإحصائيات (مشترك بين الصفحة وتقرير PDF)."""
     import calendar
 
-    # ── قراءة الفلاتر ──
     today = timezone.localdate()
-    month_str = request.GET.get('month', '') or today.strftime('%Y-%m')
-    try:
-        year, month = (int(x) for x in month_str.split('-'))
-        first = datetime.date(year, month, 1)
-    except (ValueError, TypeError):
-        first = today.replace(day=1)
-        month_str = first.strftime('%Y-%m')
-    last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
+    g = request.GET
 
-    scope = request.GET.get('scope', 'all')          # 'all' أو رقم حلقة
-    who = request.GET.get('who', 'both')             # students | staff | both
+    # ── الفترة: من تاريخ … إلى تاريخ (مع دعم ?month=YYYY-MM القديم) ──
+    start, end = _parse_iso(g.get('from')), _parse_iso(g.get('to'))
+    if not start and not end and g.get('month'):
+        try:
+            y, m = (int(x) for x in g['month'].split('-'))
+            start = datetime.date(y, m, 1)
+            end = start.replace(day=calendar.monthrange(y, m)[1])
+        except (ValueError, TypeError):
+            pass
+    if not start:
+        start = today.replace(day=1)
+    if not end:
+        end = today
+    if start > end:
+        start, end = end, start
+    if (end - start).days > 3 * 366:                # حماية من نطاقات ضخمة جداً
+        start = end - datetime.timedelta(days=3 * 366)
+
+    first_this = today.replace(day=1)
+    last_prev = first_this - datetime.timedelta(days=1)
+    quick_ranges = [
+        ('هذا الشهر', first_this, today),
+        ('الشهر الماضي', last_prev.replace(day=1), last_prev),
+        ('آخر 30 يوماً', today - datetime.timedelta(days=29), today),
+        ('آخر 3 أشهر', today - datetime.timedelta(days=89), today),
+        ('هذا العام', today.replace(month=1, day=1), today),
+    ]
+    quick_ranges = [{'label': l, 'from': a.isoformat(), 'to': b.isoformat(), 'on': a == start and b == end}
+                    for l, a, b in quick_ranges]
+
+    scope = g.get('scope', 'all')          # 'all' أو رقم حلقة
+    who = g.get('who', 'both')             # students | staff | both
     if who not in ('students', 'staff', 'both'):
         who = 'both'
+    sort = g.get('sort', 'absence')
+    if sort not in ('absence', 'rate', 'name', 'age', 'circle'):
+        sort = 'absence'
+
+    def _int(v):
+        try:
+            return int(v) if str(v).strip() != '' else None
+        except (TypeError, ValueError):
+            return None
+    age_min, age_max = _int(g.get('age_min')), _int(g.get('age_max'))
 
     circles = list(Circle.objects.order_by('display_order', 'name'))
     circle = None
@@ -1616,37 +1623,64 @@ def _stats_context(request, top_limit=15):
             circle = next((c for c in circles if c.id == int(scope)), None)
         except ValueError:
             circle = None
-        if circle is None:
-            scope = 'all'
     scope = str(circle.id) if circle else 'all'
 
+    # ── فلتر العمر (على الطلاب فقط) ──
+    def _years_ago(n):
+        try:
+            return today.replace(year=today.year - n)
+        except ValueError:                         # 29 فبراير
+            return today.replace(year=today.year - n, day=28)
+    age_q = {}
+    if age_min is not None:
+        age_q['student__birth_date__lte'] = _years_ago(age_min)
+    if age_max is not None:
+        age_q['student__birth_date__gt'] = _years_ago(age_max + 1)
+
     # ── مصادر البيانات حسب النطاق ──
-    student_sources = [dict(qs=Attendance.objects.all(), label='@circle__name', prefix='حلقة ',
+    att_qs = Attendance.objects.filter(**age_q)
+    student_sources = [dict(qs=att_qs, label='@circle__name', prefix='حلقة ',
                             pid='student_id', pname='student__name', psub='circle__name')]
     staff_sources = [dict(qs=TeacherAttendance.objects.all(), label='@circle__name', prefix='حلقة ',
                           pid='teacher_id', pname='teacher__name')]
     if circle:
-        student_sources[0]['qs'] = Attendance.objects.filter(circle=circle)
+        student_sources[0]['qs'] = att_qs.filter(circle=circle)
         staff_sources[0]['qs'] = TeacherAttendance.objects.filter(circle=circle)
     else:
-        student_sources.append(dict(qs=CourseAttendance.objects.all(), label='@course__name', prefix='دورة ',
+        student_sources.append(dict(qs=CourseAttendance.objects.filter(**age_q), label='@course__name', prefix='دورة ',
                                     pid='student_id', pname='student__name', psub='student__circle__name'))
         staff_sources.append(dict(qs=CourseTeacherAttendance.objects.all(), label='@course__name', prefix='دورة ',
                                   pid='teacher_id', pname='teacher__name'))
         staff_sources.append(dict(qs=TeacherDailyAttendance.objects.all(), label='التفقد العام',
                                   pid='teacher_id', pname='teacher__name'))
 
-    students_stats = _stats_population(student_sources, first, last, top_limit=top_limit) if who in ('students', 'both') else None
-    staff_stats = _stats_population(staff_sources, first, last) if who in ('staff', 'both') else None
+    student_meta = None
+    if who in ('students', 'both'):
+        from .models import age_from_birth_date
+        order = {c.id: i for i, c in enumerate(circles)}
+        student_meta = {
+            sid: {'age': age_from_birth_date(bd, today) if bd else None, 'circle_order': order.get(cid, 9999)}
+            for sid, bd, cid in Student.objects.values_list('id', 'birth_date', 'circle_id')
+        }
 
-    prev_month = (first - datetime.timedelta(days=1)).strftime('%Y-%m')
-    next_month = (last + datetime.timedelta(days=1)).strftime('%Y-%m')
+    students_stats = (_stats_population(student_sources, start, end, top_limit=top_limit, sort=sort,
+                                        student_meta=student_meta)
+                      if who in ('students', 'both') else None)
+    staff_sort = sort if sort in ('absence', 'rate', 'name') else 'absence'
+    staff_stats = _stats_population(staff_sources, start, end, sort=staff_sort) if who in ('staff', 'both') else None
+
+    filter_qs = request.GET.copy()
+    for k in ('from', 'to', 'month'):
+        filter_qs.pop(k, None)
 
     return {
         'active_nav': 'stats',
-        'month_str': month_str, 'first': first, 'last': last,
-        'prev_month': prev_month, 'next_month': next_month,
+        'start': start, 'end': end, 'today': today,
+        'days_span': (end - start).days + 1,
+        'quick_ranges': quick_ranges, 'keep_qs': filter_qs.urlencode(),
         'circles': circles, 'scope': scope, 'circle': circle, 'who': who,
+        'sort': sort, 'age_min': age_min, 'age_max': age_max,
+        'has_birth_dates': Student.objects.filter(birth_date__isnull=False).exists(),
         'students_stats': students_stats, 'staff_stats': staff_stats,
     }
 
@@ -1660,10 +1694,10 @@ def stats_page(request):
 def export_stats_pdf(request):
     """تقرير PDF بكامل الإحصائيات حسب نفس الفلاتر (الشهر / النطاق / الفئة)."""
     from .pdf_reports import build_stats_pdf
-    ctx = _stats_context(request, top_limit=None)     # التقرير يضم كل الأشخاص لا أعلى 15 فقط
+    ctx = _stats_context(request)
     pdf_bytes = build_stats_pdf(ctx)
     scope_tag = f"circle{ctx['circle'].id}" if ctx['circle'] else 'all'
-    filename = f"masjid_taha_stats_{ctx['month_str']}_{scope_tag}_{ctx['who']}.pdf"
+    filename = f"masjid_taha_stats_{ctx['start']}_{ctx['end']}_{scope_tag}_{ctx['who']}.pdf"
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
@@ -1679,6 +1713,7 @@ def _sabr_item(sabr, today):
         'date': sabr.date.isoformat(),
         'date_display': sabr.date.strftime('%Y-%m-%d'),
         'days_ago': (today - sabr.date).days,
+        'notes': sabr.notes,
     }
 
 
@@ -1711,7 +1746,10 @@ def _parse_sabr_date(request):
 
 @login_required
 def sabr_page(request):
-    return render(request, 'halaqat/sabr.html', {'active_nav': 'sabr', 'today': timezone.localdate()})
+    return render(request, 'halaqat/sabr.html', {
+        'active_nav': 'sabr', 'today': timezone.localdate(),
+        'read_only': is_viewer(request.user),
+    })
 
 
 @login_required
@@ -1727,7 +1765,8 @@ def sabr_add(request, student_id):
     d, err = _parse_sabr_date(request)
     if err:
         return JsonResponse({'ok': False, 'error': err}, status=400)
-    Sabr.objects.create(student=student, date=d)
+    notes = (request.POST.get('notes') or '').strip()
+    Sabr.objects.create(student=student, date=d, notes=notes)
     return JsonResponse(_sabr_payload(student))
 
 
@@ -1740,8 +1779,12 @@ def sabr_update(request, sabr_id):
         return JsonResponse({'ok': False, 'error': err}, status=400)
     old = sabr.date
     sabr.date = d
-    sabr.save(update_fields=['date'])
-    _log_admin_action(request, f'✏️ تعديل تاريخ سبر {sabr.student.name}: {old} ← {d}')
+    fields = ['date']
+    if 'notes' in request.POST:
+        sabr.notes = (request.POST.get('notes') or '').strip()
+        fields.append('notes')
+    sabr.save(update_fields=fields)
+    _log_admin_action(request, f'✏️ تعديل سبر {sabr.student.name}: {old} ← {d}')
     return JsonResponse(_sabr_payload(sabr.student))
 
 

@@ -2,6 +2,11 @@ from django.db import models
 from django.utils import timezone
 
 
+def age_from_birth_date(birth_date, on=None):
+    on = on or timezone.localdate()
+    return on.year - birth_date.year - ((on.month, on.day) < (birth_date.month, birth_date.day))
+
+
 class Teacher(models.Model):
     """المعلم المسؤول عن حلقة أو أكثر"""
     name = models.CharField('اسم الأستاذ', max_length=150)
@@ -70,7 +75,10 @@ class Student(models.Model):
         on_delete=models.CASCADE, related_name='students',
     )
     notes = models.CharField('ملاحظات', max_length=255, blank=True)
+    birth_date = models.DateField('تاريخ الميلاد', null=True, blank=True,
+                                  help_text='يُستخدم لحساب العمر وفرز الطلاب في الإحصائيات.')
     joined_at = models.DateTimeField('تاريخ الانضمام', auto_now_add=True)
+    updated_at = models.DateTimeField('آخر تعديل', auto_now=True, null=True)
 
     class Meta:
         verbose_name = 'طالب'
@@ -79,6 +87,13 @@ class Student(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def age(self):
+        """العمر بالسنوات الكاملة (None إن لم يُحدَّد تاريخ الميلاد)."""
+        if not self.birth_date:
+            return None
+        return age_from_birth_date(self.birth_date)
 
     def attendance_rate(self, days=90):
         since = timezone.now().date() - timezone.timedelta(days=days)
@@ -291,6 +306,7 @@ class Sabr(models.Model):
     """سبر (اختبار) يجريه الطالب — يُسجَّل بتاريخ اليوم افتراضياً ويمكن تغيير التاريخ."""
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='sabrs', verbose_name='الطالب')
     date = models.DateField('تاريخ السبر', default=timezone.localdate)
+    notes = models.TextField('تفاصيل السبر والملاحظات', blank=True, default='')
     created_at = models.DateTimeField('وقت التسجيل', auto_now_add=True)
 
     class Meta:

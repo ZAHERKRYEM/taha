@@ -61,6 +61,10 @@
         {{ student_form.circle }}
       </div>
       <div class="field">
+        <label for="{{ student_form.birth_date.id_for_label }}">تاريخ الميلاد (اختياري — لحساب العمر)</label>
+        {{ student_form.birth_date }}
+      </div>
+      <div class="field">
         <label for="{{ student_form.phone.id_for_label }}">رقم الهاتف (اختياري)</label>
         {{ student_form.phone }}
       </div>
@@ -175,13 +179,14 @@
   <div class="table-scroll">
     <table class="admin-table">
       <thead>
-        <tr><th>اسم الطالب</th><th>الحلقة</th><th>ملاحظات</th><th colspan="3"></th></tr>
+        <tr><th>اسم الطالب</th><th>الحلقة</th><th>العمر</th><th>ملاحظات</th><th colspan="3"></th></tr>
       </thead>
       <tbody>
         {% for student in students %}
         <tr>
-          <td>{{ student.name }}</td>
+          <td><a href="{% url 'student_profile' student.id %}" class="student-link">{{ student.name }}</a></td>
           <td>{{ student.circle.name }}</td>
+          <td>{% if student.age is not None %}{{ student.age }}{% else %}<span style="color:#c9b892;">—</span>{% endif %}</td>
           <td>{% if student.notes %}{{ student.notes }}{% else %}<span style="color:#c9b892;">—</span>{% endif %}</td>
           <td><a href="{% url 'student_profile' student.id %}" class="edit-link">👁 الملف</a></td>
           <td><a href="{% url 'edit_student' student.id %}" class="edit-link">✏️ تعديل</a></td>
@@ -240,6 +245,53 @@
   {% else %}
   <p style="font-size:13px; color:#9c8a71;">لا توجد دورات أو دروس إضافية بعد.</p>
   {% endif %}
+  </div>
+</div>
+
+<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
+  <h3>📥 استيراد بيانات من ملف Excel</h3>
+  <div class="panel-body">
+    <p style="font-size:13px;color:#7a6a55;margin-top:0">
+      استورد ملف Excel صادراً مسبقاً عن هذا النظام (ملف النسخة الاحتياطية المُرسل إلى تلغرام).
+      يمكنك الدمج مع البيانات الحالية (إضافة الجديد فقط) أو الاستبدال الكامل.
+    </p>
+    <a href="{% url 'migrate_sqlite_to_postgres' %}" class="btn-primary" style="text-decoration:none;display:inline-block">📥 فتح صفحة الاستيراد</a>
+  </div>
+</div>
+
+<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
+  <h3>👁 حسابات المشاهدة (إحصائيات + سبر فقط)</h3>
+  <div class="panel-body">
+    <p style="font-size:13px;color:#7a6a55;margin-top:0">
+      حساب «مشاهد» يستطيع فقط عرض صفحة الإحصائيات وصفحة السبر (وملف الطالب عند الضغط على اسمه)، دون أي تسجيل أو تعديل.
+    </p>
+    <form method="post" autocomplete="off">
+      {% csrf_token %}
+      <div class="field"><label>{{ viewer_form.username.label }}</label>{{ viewer_form.username }}</div>
+      <div class="field"><label>{{ viewer_form.password.label }}</label>{{ viewer_form.password }}</div>
+      {% if viewer_form.errors %}<div class="form-errors">{% for f in viewer_form %}{% for e in f.errors %}{{ e }} {% endfor %}{% endfor %}</div>{% endif %}
+      <button type="submit" name="submit_viewer" class="btn-primary">➕ إنشاء حساب مشاهد</button>
+    </form>
+    {% if viewers %}
+    <div class="table-scroll" style="margin-top:12px">
+      <table class="admin-table">
+        <thead><tr><th>اسم المستخدم</th><th>آخر دخول</th><th></th></tr></thead>
+        <tbody>
+        {% for v in viewers %}
+          <tr>
+            <td>{{ v.username }}</td>
+            <td>{% if v.last_login %}{{ v.last_login|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+            <td>
+              <form method="post" action="{% url 'delete_viewer' v.id %}" onsubmit="return confirm('حذف حساب المشاهد «{{ v.username }}»؟');">
+                {% csrf_token %}<button type="submit" class="delete-link">🗑 حذف</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 </div>
 
