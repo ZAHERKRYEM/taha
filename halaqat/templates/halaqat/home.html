@@ -1,0 +1,76 @@
+{% extends "halaqat/base.html" %}
+{% block title %}الرئيسية — مسجد طه{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h2>🏠 متابعة تسجيل الحضور</h2>
+  <div class="desc">{% if selected_date == today %}اليوم · {% endif %}{{ selected_date|date:"Y-m-d" }}</div>
+</div>
+
+<form method="get" class="date-bar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+  <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" onchange="this.form.submit()"
+         style="padding:8px 10px;border:1px solid var(--accent-light);border-radius:8px;font:inherit">
+  {% if selected_date != today %}<a href="{% url 'home' %}" class="btn-secondary" style="padding:8px 14px;width:auto;flex:0 0 auto">اليوم</a>{% endif %}
+</form>
+
+<div class="reg-overall {% if all_done %}ok{% else %}no{% endif %}">
+  {% if all_done %}✅ تم تسجيل الحضور لجميع الحلقات والأساتذة{% else %}⏳ لم يكتمل التسجيل بعد — {{ done_circles }} من {{ circle_rows|length }} حلقة مكتملة · {{ teachers_done }} من {{ teachers_total }} أستاذ{% endif %}
+</div>
+
+<div class="summary-bar">
+  <div class="summary-chip present"><div class="n">{{ counts.present }}</div><div class="l">حاضر</div></div>
+  <div class="summary-chip late"><div class="n">{{ counts.late }}</div><div class="l">متأخر</div></div>
+  <div class="summary-chip excused"><div class="n">{{ counts.excused }}</div><div class="l">غائب بإذن</div></div>
+  <div class="summary-chip absent"><div class="n">{{ counts.absent }}</div><div class="l">غائب بدون إذن</div></div>
+  <div class="summary-chip"><div class="n">{{ counts.unrecorded }}</div><div class="l">لم يُسجَّل</div></div>
+</div>
+<p style="font-size:12px;color:#9c8a71;margin:4px 0 12px">سُجّل {{ total_recorded }} من {{ total_students }} طالباً في الحلقات · <a href="{% url 'absentees_list' %}?date={{ selected_date|date:'Y-m-d' }}">🚫 عرض الغائبين</a></p>
+
+<div class="home-grid">
+  <div class="panel" style="padding:0;overflow:hidden">
+    <h3 style="padding:12px 14px 0">📖 الحلقات</h3>
+    {% for r in circle_rows %}
+    <div class="reg-row">
+      <div>
+        <a class="nm" href="{% url 'circle_detail' r.circle.id %}?date={{ selected_date|date:'Y-m-d' }}">{{ r.circle.name }}</a>
+        <div class="sub">
+          {% if r.circle.teacher %}<a href="{% url 'teacher_profile' r.circle.teacher.id %}" class="student-link">{{ r.circle.teacher.name }}</a>
+            {% if r.teacher_ok %}✓{% else %}<span style="color:#a3433a">— لم يُسجَّل للأستاذ</span>{% endif %}
+          {% else %}بلا أستاذ{% endif %}
+          · الطلاب {{ r.recorded }}/{{ r.students }}
+        </div>
+      </div>
+      <span class="reg-badge {{ r.state }}">{% if r.state == 'ok' %}مكتمل ✓{% elif r.state == 'part' %}جزئي{% else %}لم يُسجَّل{% endif %}</span>
+    </div>
+    {% empty %}<p style="padding:14px">لا توجد حلقات.</p>
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <h3 style="padding:12px 14px 0">👨‍🏫 التفقد العام للأساتذة</h3>
+      {% for r in teacher_rows %}
+      <div class="reg-row">
+        <a class="nm student-link" href="{% url 'teacher_profile' r.teacher.id %}">{{ r.teacher.name }}</a>
+        <span class="reg-badge {% if r.ok %}ok{% else %}no{% endif %}">{% if r.ok %}سُجِّل ✓{% else %}لم يُسجَّل{% endif %}</span>
+      </div>
+      {% empty %}<p style="padding:0 14px 12px;font-size:13px;color:#9c8a71">كل الأساتذة مرتبطون بحلقات أو دورات.</p>
+      {% endfor %}
+      {% if teacher_rows %}<div style="padding:8px 14px 12px"><a href="{% url 'teachers_list' %}?date={{ selected_date|date:'Y-m-d' }}" class="btn-secondary">تسجيل التفقد العام</a></div>{% endif %}
+    </div>
+
+    {% if course_rows %}
+    <div class="panel" style="padding:0;overflow:hidden">
+      <h3 style="padding:12px 14px 0">🎓 الدورات المسجّلة في هذا اليوم</h3>
+      {% for r in course_rows %}
+      <div class="reg-row">
+        <div><a class="nm" href="{% url 'course_detail' r.course.id %}?date={{ selected_date|date:'Y-m-d' }}">{{ r.course.name }}</a>
+          <div class="sub">الطلاب {{ r.recorded }}/{{ r.students }}</div></div>
+        <span class="reg-badge {{ r.state }}">{% if r.state == 'ok' %}مكتمل ✓{% else %}جزئي{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

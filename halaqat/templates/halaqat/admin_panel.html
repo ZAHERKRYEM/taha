@@ -1,22 +1,16 @@
 {% extends "halaqat/base.html" %}
+{% load static %}
 {% block title %}لوحة التحكم - مسجد طه{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <h2>لوحة التحكم</h2>
-  <div class="desc">إضافة حلقات، أساتذة وطلاب جدد</div>
+  <div class="desc">اختر القسم من التبويبات</div>
 </div>
 
-<div style="margin-bottom:20px; text-align:left;">
-  <a href="{% url 'developer_page' %}"
-     style="font-size:12px; color:#9c8a71; text-decoration:none;">
-    🛠 أدوات المطور (تلغرام / ترحيل قاعدة البيانات)
-  </a>
-</div>
-
-<div class="admin-grid">
-
-  <div class="panel collapsible-panel">
+<div data-subtabs>
+<section class="subpane" data-tab="add-circle" data-title="➕ إضافة حلقة">
+<div class="panel">
     <h3>➕ إضافة حلقة جديدة</h3>
     <div class="panel-body">
     <form method="post">
@@ -46,8 +40,9 @@
     </form>
     </div>
   </div>
-
-  <div class="panel collapsible-panel">
+</section>
+<section class="subpane" data-tab="add-student" data-title="➕ إضافة طالب">
+<div class="panel">
     <h3>➕ إضافة طالب</h3>
     <div class="panel-body">
     <form method="post">
@@ -77,34 +72,9 @@
     </form>
     </div>
   </div>
-
-  <div class="panel collapsible-panel">
-    <h3>📩 إرسال رسالة واتساب للطلاب الغائبين</h3>
-    <div class="panel-body">
-    <div class="desc">سيتم إرسال الرسالة فقط للطلاب الغائبين في التاريخ المحدد. احرص على وجود رقم الهاتف لكل طالب.</div>
-    <form method="post">
-      {% csrf_token %}
-      <div class="field">
-        <label for="{{ whatsapp_form.date.id_for_label }}">تاريخ الغياب</label>
-        {{ whatsapp_form.date }}
-      </div>
-      <div class="field">
-        <label for="{{ whatsapp_form.circle.id_for_label }}">الحلقة (اختياري)</label>
-        {{ whatsapp_form.circle }}
-      </div>
-      <div class="field">
-        <label for="{{ whatsapp_form.message.id_for_label }}">نص الرسالة</label>
-        {{ whatsapp_form.message }}
-      </div>
-      {% if whatsapp_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
-      <button type="submit" name="submit_whatsapp_absent" class="btn-primary">إرسال للغائبين</button>
-    </form>
-    </div>
-  </div>
-
-</div>
-
-<div class="panel collapsible-panel" style="margin-bottom:16px;">
+</section>
+<section class="subpane" data-tab="add-course" data-title="🎓 إضافة دورة">
+<div class="panel">
   <h3>🎓 إنشاء دورة / درس إضافي جديد</h3>
   <div class="panel-body">
   <p style="font-size:12px; color:#9c8a71; margin-bottom:14px;">دورة أو درس لفئة محددة من الطلاب (من أي حلقة)، بحضور مستقل عن الحلقة الأساسية</p>
@@ -115,8 +85,8 @@
       {{ course_form.name }}
     </div>
     <div class="field">
-      <label for="{{ course_form.teachers.id_for_label }}">الأساتذة / المحاضرون المسؤولون (اختياري)</label>
-      {{ course_form.teachers }}
+      <label>الكادر الإشرافي — الأساتذة / المحاضرون المسؤولون (اختياري)</label>
+      {% include "halaqat/_dd_multi.html" with field=course_form.teachers placeholder="اضغط لاختيار المشرفين…" %}
     </div>
     <div class="field">
       <label for="{{ course_form.new_teacher_name.id_for_label }}">{{ course_form.new_teacher_name.label }}</label>
@@ -136,9 +106,10 @@
     <button type="submit" name="submit_course" class="btn-primary">حفظ الدورة</button>
   </form>
   </div>{# /panel-body #}
-</div>{# /panel: إنشاء دورة #}
-
-<div class="panel collapsible-panel start-collapsed">
+</div>
+</section>
+<section class="subpane" data-tab="circles" data-title="📋 الحلقات">
+<div class="panel">
   <h3>📋 الحلقات الحالية</h3>
   <div class="panel-body">
   {% if circles %}
@@ -151,7 +122,7 @@
         {% for circle in circles %}
         <tr>
           <td>{{ circle.name }}</td>
-          <td>{% if circle.teacher %}{{ circle.teacher.name }}{% else %}—{% endif %}</td>
+          <td>{% if circle.teacher %}<a href="{% url 'teacher_profile' circle.teacher.id %}" class="student-link">{{ circle.teacher.name }}</a>{% else %}—{% endif %}</td>
           <td>{{ circle.student_count }}</td>
           <td><a href="{% url 'edit_circle' circle.id %}" class="edit-link">✏️ تعديل</a></td>
           <td>
@@ -171,8 +142,9 @@
   {% endif %}
   </div>
 </div>
-
-<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
+</section>
+<section class="subpane" data-tab="students" data-title="👥 الطلاب">
+<div class="panel">
   <h3>👥 الطلاب الحاليون</h3>
   <div class="panel-body">
   {% if students %}
@@ -207,8 +179,9 @@
   {% endif %}
   </div>
 </div>
-
-<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
+</section>
+<section class="subpane" data-tab="courses" data-title="🎓 الدورات">
+<div class="panel">
   <h3>🎓 الدورات والدروس الإضافية الحالية</h3>
   <div class="panel-body">
   {% if courses %}
@@ -223,7 +196,7 @@
           <td>{{ course.name }}</td>
           <td>
             {% if course.teachers.all %}
-              {% for teacher in course.teachers.all %}{{ teacher.name }}{% if not forloop.last %}، {% endif %}{% endfor %}
+              {% for teacher in course.teachers.all %}<a href="{% url 'teacher_profile' teacher.id %}" class="student-link">{{ teacher.name }}</a>{% if not forloop.last %}، {% endif %}{% endfor %}
             {% else %}
               —
             {% endif %}
@@ -247,19 +220,34 @@
   {% endif %}
   </div>
 </div>
-
-<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
-  <h3>📥 استيراد بيانات من ملف Excel</h3>
-  <div class="panel-body">
-    <p style="font-size:13px;color:#7a6a55;margin-top:0">
-      استورد ملف Excel صادراً مسبقاً عن هذا النظام (ملف النسخة الاحتياطية المُرسل إلى تلغرام).
-      يمكنك الدمج مع البيانات الحالية (إضافة الجديد فقط) أو الاستبدال الكامل.
-    </p>
-    <a href="{% url 'migrate_sqlite_to_postgres' %}" class="btn-primary" style="text-decoration:none;display:inline-block">📥 فتح صفحة الاستيراد</a>
+</section>
+<section class="subpane" data-tab="whatsapp" data-title="📩 واتساب">
+<div class="panel">
+    <h3>📩 إرسال رسالة واتساب للطلاب الغائبين</h3>
+    <div class="panel-body">
+    <div class="desc">سيتم إرسال الرسالة فقط للطلاب الغائبين في التاريخ المحدد. احرص على وجود رقم الهاتف لكل طالب.</div>
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label for="{{ whatsapp_form.date.id_for_label }}">تاريخ الغياب</label>
+        {{ whatsapp_form.date }}
+      </div>
+      <div class="field">
+        <label for="{{ whatsapp_form.circle.id_for_label }}">الحلقة (اختياري)</label>
+        {{ whatsapp_form.circle }}
+      </div>
+      <div class="field">
+        <label for="{{ whatsapp_form.message.id_for_label }}">نص الرسالة</label>
+        {{ whatsapp_form.message }}
+      </div>
+      {% if whatsapp_form.errors %}<div class="form-errors">تحقق من الحقول المطلوبة.</div>{% endif %}
+      <button type="submit" name="submit_whatsapp_absent" class="btn-primary">إرسال للغائبين</button>
+    </form>
+    </div>
   </div>
-</div>
-
-<div class="panel collapsible-panel start-collapsed" style="margin-top:16px;">
+</section>
+<section class="subpane" data-tab="viewers" data-title="👁 حسابات المشاهدة">
+<div class="panel">
   <h3>👁 حسابات المشاهدة (إحصائيات + سبر فقط)</h3>
   <div class="panel-body">
     <p style="font-size:13px;color:#7a6a55;margin-top:0">
@@ -294,21 +282,7 @@
     {% endif %}
   </div>
 </div>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.collapsible-panel').forEach(function(panel) {
-      if (panel.classList.contains('start-collapsed')) {
-        panel.classList.add('collapsed');
-      }
-      var header = panel.querySelector('h3');
-      if (!header) return;
-      header.style.cursor = 'pointer';
-      header.addEventListener('click', function() {
-        panel.classList.toggle('collapsed');
-      });
-    });
-  });
-</script>
+</section>
+</div>
 
 {% endblock %}

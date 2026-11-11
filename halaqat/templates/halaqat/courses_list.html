@@ -17,10 +17,6 @@
   <a href="{% url 'export_course_attendance_csv' %}?date={{ today|date:'Y-m-d' }}" class="btn-secondary">📤 تصدير حضور اليوم (CSV)</a>
 </div>
 
-<p class="autosave-hint">
-  🟢 إطار أخضر = تم تسجيل حضور جميع المشاركين اليوم · 🔴 إطار أحمر = ما زال هناك من لم يُسجَّل له حضور بعد
-</p>
-
 {% if course_cards %}
 <div class="circles-grid">
   {% for card in course_cards %}
@@ -34,7 +30,7 @@
     <h3>{{ card.course.name }}</h3>
     <div class="teacher">
       {% if card.course.teachers.all %}
-        {% for teacher in card.course.teachers.all %}{{ teacher.name }}{% if not forloop.last %}، {% endif %}{% endfor %}
+        {% for teacher in card.course.teachers.all %}<span class="student-link" role="link" onclick="event.preventDefault();event.stopPropagation();location.href='{% url 'teacher_profile' teacher.id %}'">{{ teacher.name }}</span>{% if not forloop.last %}، {% endif %}{% endfor %}
       {% else %}
         بدون أستاذ محدد
       {% endif %}

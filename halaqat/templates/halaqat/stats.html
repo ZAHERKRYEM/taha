@@ -13,8 +13,8 @@
 
 <form method="get" class="panel st-filters" id="st-form">
   <div class="st-range">
-    <label>من تاريخ <input type="date" name="from" value="{{ start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
-    <label>إلى تاريخ <input type="date" name="to" value="{{ end|date:'Y-m-d' }}"></label>
+    <label>من تاريخ <input type="date" name="from" value="{{ start|date:'Y-m-d' }}" min="{{ first_record|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>إلى تاريخ <input type="date" name="to" value="{{ end|date:'Y-m-d' }}" min="{{ first_record|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
   </div>
   <div class="st-quick">
     {% for q in quick_ranges %}<a href="?from={{ q.from }}&to={{ q.to }}&{{ keep_qs }}" class="{% if q.on %}on{% endif %}">{{ q.label }}</a>{% endfor %}
@@ -56,6 +56,33 @@
 {% if students_stats %}
   {% include "halaqat/_stats_block.html" with kind="students" st=students_stats title="👥 الطلاب" people_title="سجل الطلاب" %}
 {% endif %}
+{% if sabr_stats %}
+<div class="st-section">
+  <h3 class="st-title">📝 السبر</h3>
+  <div class="stats-row st-cards">
+    <div class="stat-card"><div class="num">{{ sabr_stats.count }}</div><div class="lbl">عدد مرات السبر</div></div>
+    <div class="stat-card"><div class="num">{{ sabr_stats.pct }}%</div><div class="lbl">نسبة الطلاب الذين سُبِروا ({{ sabr_stats.done }} من {{ sabr_stats.students }})</div></div>
+    <div class="stat-card"><div class="num">{{ sabr_stats.avg }}</div><div class="lbl">متوسط السبر لكل طالب</div></div>
+    <div class="stat-card"><div class="num">{{ sabr_stats.monthly|length }}</div><div class="lbl">أشهر فيها سبر</div></div>
+  </div>
+  {% if sabr_stats.circles %}
+  <div class="panel">
+    <h3>السبر حسب الحلقة</h3>
+    <div class="table-scroll">
+      <table class="admin-table month-table">
+        <thead><tr><th>الحلقة</th><th>الطلاب</th><th>سُبِروا</th><th>النسبة</th><th>مرات السبر</th></tr></thead>
+        <tbody>{% for r in sabr_stats.circles %}<tr><td style="text-align:right">{{ r.label }}</td><td>{{ r.students }}</td><td>{{ r.done }}</td>
+          <td class="{% if r.pct >= 70 %}rate-good{% elif r.pct >= 40 %}rate-mid{% else %}rate-bad{% endif %}">{{ r.pct }}%</td><td>{{ r.count }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    {% if sabr_stats.monthly %}
+    <div class="absence-stats" style="flex-wrap:wrap;margin-top:10px">{% for m in sabr_stats.monthly %}<span>{{ m.label }}: {{ m.count }}</span>{% endfor %}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if staff_stats %}
   {% include "halaqat/_stats_block.html" with kind="staff" st=staff_stats title="👨‍🏫 الكادر" people_title="سجل الكادر" %}
 {% endif %}

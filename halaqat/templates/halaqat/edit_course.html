@@ -1,4 +1,5 @@
 {% extends "halaqat/base.html" %}
+{% load static %}
 {% block title %}تعديل الدورة - مسجد طه{% endblock %}
 {% block content %}
 
@@ -17,8 +18,8 @@
       {{ form.name }}
     </div>
     <div class="field">
-      <label for="{{ form.teachers.id_for_label }}">الأساتذة / المحاضرون المسؤولون</label>
-      {{ form.teachers }}
+      <label>الكادر الإشرافي — الأساتذة / المحاضرون المسؤولون</label>
+      {% include "halaqat/_dd_multi.html" with field=form.teachers placeholder="اضغط لاختيار المشرفين…" %}
     </div>
     <div class="field">
       <label for="{{ form.new_teacher_name.id_for_label }}">{{ form.new_teacher_name.label }}</label>

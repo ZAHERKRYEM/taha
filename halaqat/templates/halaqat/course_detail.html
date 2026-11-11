@@ -31,7 +31,7 @@
     <div class="teacher">
       {% if teacher_rows %}
         {% for row in teacher_rows %}
-          الأستاذ {{ row.teacher.name }}{% if not forloop.last %}، {% endif %}
+          الأستاذ <a href="{% url 'teacher_profile' row.teacher.id %}" class="student-link">{{ row.teacher.name }}</a>{% if not forloop.last %}، {% endif %}
         {% endfor %}
       {% else %}
         بدون أستاذ محدد
@@ -58,8 +58,6 @@
   <div class="summary-chip excused"><div class="n" id="cnt-excused">{{ excused_count }}</div><div class="l">إذن</div></div>
 </div>
 
-{% include "halaqat/_history_legend.html" %}
-<p class="autosave-hint">💡 يتم حفظ الحضور فور الضغط على الخيار — بدون الحاجة لزر حفظ.</p>
 
 {% csrf_token %}
 
@@ -70,7 +68,7 @@
     <div class="student-name">
       <div class="avatar teacher-avatar">👨‍🏫</div>
       <div>
-        {{ row.teacher.name }}
+        <a href="{% url 'teacher_profile' row.teacher.id %}" class="student-link">{{ row.teacher.name }}</a>
         <span class="role-tag">الأستاذ / المحاضر</span>
       </div>
     </div>

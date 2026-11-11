@@ -25,10 +25,6 @@
   <a href="{% url 'export_attendance_csv' %}?date={{ today|date:'Y-m-d' }}" class="btn-secondary">📤 تصدير حضور اليوم (CSV)</a>
 </div>
 
-<p class="autosave-hint">
-  🟢 إطار أخضر = تم تسجيل حضور جميع الطلاب والأستاذ اليوم · 🔴 إطار أحمر = ما زال هناك من لم يُسجَّل له حضور بعد
-</p>
-
 {% if circle_cards %}
 <div class="circles-grid">
   {% for card in circle_cards %}
@@ -40,7 +36,7 @@
     {% endif %}
     <div class="circle-icon">📖</div>
     <h3>{{ card.circle.name }}</h3>
-    <div class="teacher">{% if card.circle.teacher %}الأستاذ {{ card.circle.teacher.name }}{% else %}لا يوجد أستاذ محدد{% endif %}</div>
+    <div class="teacher">{% if card.circle.teacher %}الأستاذ <span class="student-link" role="link" onclick="event.preventDefault();event.stopPropagation();location.href='{% url 'teacher_profile' card.circle.teacher.id %}'">{{ card.circle.teacher.name }}</span>{% else %}لا يوجد أستاذ محدد{% endif %}</div>
     <div class="row">
       <span>{{ card.student_count }} طالب</span>
       {% if card.today_rate is not None %}

@@ -29,7 +29,7 @@
   <div class="info">
     <h2>{{ circle.name }}</h2>
     <div class="teacher">
-      {% if circle.teacher %}الأستاذ {{ circle.teacher.name }}{% else %}لا يوجد أستاذ محدد{% endif %}
+      {% if circle.teacher %}الأستاذ <a href="{% url 'teacher_profile' circle.teacher.id %}" class="student-link">{{ circle.teacher.name }}</a>{% else %}لا يوجد أستاذ محدد{% endif %}
       {% if attendance_rate_30d is not None %} · نسبة الحضور (30 يوم): {{ attendance_rate_30d }}%{% endif %}
     </div>
   </div>
@@ -43,8 +43,6 @@
     📤 تصدير حضور هذه الحلقة (CSV)
   </a>
 </div>
-
-{% include "halaqat/_history_legend.html" %}
 
 <div class="summary-bar">
   <div class="summary-chip present"><div class="n" id="cnt-present">{{ present_count }}</div><div class="l">حاضر</div></div>
@@ -62,7 +60,7 @@
     <div class="student-name">
       <div class="avatar teacher-avatar">👨‍🏫</div>
       <div>
-        {{ circle.teacher.name }}
+        <a href="{% url 'teacher_profile' circle.teacher.id %}" class="student-link">{{ circle.teacher.name }}</a>
         <span class="role-tag">الأستاذ المسؤول</span>
       </div>
     </div>

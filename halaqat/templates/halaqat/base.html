@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#B17F4A">
   <link rel="icon" href="{% static 'halaqat/images/logo.svg' %}" type="image/svg+xml">
-  <link rel="stylesheet" href="{% static 'halaqat/css/style.css' %}?v=7">
+  <link rel="stylesheet" href="{% static 'halaqat/css/style.css' %}?v=8">
 </head>
 <body>
 <div class="arch-pattern"></div>
@@ -25,18 +25,8 @@
   </div>
 
   <nav class="top-nav">
-    {% if not is_viewer %}
-    <a href="{% url 'circles_list' %}" class="{% if active_nav == 'circles' %}active{% endif %}">الحلقات</a>
-    <a href="{% url 'courses_list' %}" class="{% if active_nav == 'courses' %}active{% endif %}">الدورات</a>
-    <a href="{% url 'teachers_list' %}" class="{% if active_nav == 'teachers' %}active{% endif %}">الأساتذة</a>
-    <a href="{% url 'absentees_list' %}" class="{% if active_nav == 'absentees' %}active{% endif %}">الغائبون</a>
-    {% endif %}
-    <a href="{% url 'stats_page' %}" class="{% if active_nav == 'stats' %}active{% endif %}">📊 الإحصائيات</a>
-    <a href="{% url 'sabr_page' %}" class="{% if active_nav == 'sabr' %}active{% endif %}">📝 السبر</a>
-    {% if not is_viewer %}
-    <a href="{% url 'admin_panel' %}" class="{% if active_nav == 'admin' %}active{% endif %}">لوحة التحكم</a>
-    <a href="{% url 'developer_page' %}" class="{% if active_nav == 'developer' %}active{% endif %}">🛠 المطور</a>
-    {% endif %}
+    {% for it in nav_main %}<a href="{{ it.url }}" class="{% if active_nav == it.key %}active{% endif %}">{{ it.icon }} {{ it.label }}</a>{% endfor %}
+    <button type="button" class="top-more {% for it in nav_more %}{% if active_nav == it.key %}active{% endif %}{% endfor %}" onclick="toggleDrawer(true)">☰ خيارات</button>
   </nav>
 
   <div class="brand-actions">
@@ -62,41 +52,43 @@
 
 {% if user.is_authenticated %}
 <nav class="bottom-nav">
-  {% if not is_viewer %}
-  <a href="{% url 'circles_list' %}" class="{% if active_nav == 'circles' %}active{% endif %}">
-    <span class="ic">📖</span> الحلقات
-  </a>
-  <a href="{% url 'courses_list' %}" class="{% if active_nav == 'courses' %}active{% endif %}">
-    <span class="ic">🎓</span> الدورات
-  </a>
-  <a href="{% url 'teachers_list' %}" class="{% if active_nav == 'teachers' %}active{% endif %}">
-    <span class="ic">👨‍🏫</span> الأساتذة
-  </a>
-  <a href="{% url 'absentees_list' %}" class="{% if active_nav == 'absentees' %}active{% endif %}">
-    <span class="ic">🚫</span> الغائبون
-  </a>
-  {% endif %}
-  <a href="{% url 'stats_page' %}" class="{% if active_nav == 'stats' %}active{% endif %}">
-    <span class="ic">📊</span> إحصائيات
-  </a>
-  <a href="{% url 'sabr_page' %}" class="{% if active_nav == 'sabr' %}active{% endif %}">
-    <span class="ic">📝</span> السبر
-  </a>
-  {% if not is_viewer %}
-  <a href="{% url 'admin_panel' %}" class="{% if active_nav == 'admin' %}active{% endif %}">
-    <span class="ic">⚙️</span> لوحة التحكم
-  </a>
-  <a href="{% url 'developer_page' %}" class="{% if active_nav == 'developer' %}active{% endif %}">
-    <span class="ic">🛠</span> المطور
-  </a>
-  {% endif %}
+  {% for it in nav_main %}
+  <a href="{{ it.url }}" class="{% if active_nav == it.key %}active{% endif %}"><span class="ic">{{ it.icon }}</span> {{ it.label }}</a>
+  {% endfor %}
+  <a href="#" onclick="toggleDrawer(true);return false" class="{% for it in nav_more %}{% if active_nav == it.key %}active{% endif %}{% endfor %}"><span class="ic">☰</span> خيارات</a>
 </nav>
+
+<div class="drawer-backdrop" id="drawer-backdrop" onclick="toggleDrawer(false)" hidden></div>
+<aside class="side-drawer" id="side-drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <b>الخيارات</b>
+    <button type="button" class="icon-btn" onclick="toggleDrawer(false)" title="إغلاق">✕</button>
+  </div>
+  <div class="drawer-list">
+    {% for it in nav_more %}
+    <a href="{{ it.url }}" class="{% if active_nav == it.key %}active{% endif %}"><span class="ic">{{ it.icon }}</span>{{ it.label }}</a>
+    {% endfor %}
+    <div class="drawer-sep">كل الصفحات</div>
+    {% for it in nav_main %}
+    <a href="{{ it.url }}" class="{% if active_nav == it.key %}active{% endif %}"><span class="ic">{{ it.icon }}</span>{{ it.label }}</a>
+    {% endfor %}
+  </div>
+</aside>
+<script>
+function toggleDrawer(open){
+  const d=document.getElementById('side-drawer'), b=document.getElementById('drawer-backdrop');
+  d.classList.toggle('open', open); b.hidden=!open; d.setAttribute('aria-hidden', !open);
+  document.body.style.overflow = open ? 'hidden' : '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleDrawer(false); });
+</script>
 {% endif %}
 
 <div class="qs-overlay" id="qs-overlay" onclick="if(event.target===this)closeQuickStats()">
   <div class="qs-box"><button class="qs-close" onclick="closeQuickStats()">✕</button><div id="qs-body"></div></div>
 </div>
-{% if user.is_authenticated %}<script src="{% static 'halaqat/js/student_index.js' %}?v=1"></script>{% endif %}
+{% if user.is_authenticated %}<script src="{% static 'halaqat/js/student_index.js' %}?v=1"></script>
+<script src="{% static 'halaqat/js/ui.js' %}?v=1" defer></script>{% endif %}
 <script>
 async function openQuickStats(id){
   const ov=document.getElementById('qs-overlay'), body=document.getElementById('qs-body');

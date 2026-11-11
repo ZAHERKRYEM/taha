@@ -53,13 +53,46 @@ def _register_fonts():
     global _fonts_ready
     if _fonts_ready:
         return
-    pdfmetrics.registerFont(TTFont(FONT, os.path.join(_FONT_DIR, 'DejaVuSans.ttf')))
-    pdfmetrics.registerFont(TTFont(FONT_BOLD, os.path.join(_FONT_DIR, 'DejaVuSans-Bold.ttf')))
+    # خط «دبي» (Dubai) لتقارير PDF، مع الرجوع لـ DejaVu إن تعذّر تحميله
+    try:
+        pdfmetrics.registerFont(TTFont(FONT, os.path.join(_FONT_DIR, 'DUBAI-REGULAR.TTF')))
+        pdfmetrics.registerFont(TTFont(FONT_BOLD, os.path.join(_FONT_DIR, 'DUBAI-MEDIUM.TTF')))
+        _load_cmap(os.path.join(_FONT_DIR, 'DUBAI-REGULAR.TTF'))
+    except Exception:
+        pdfmetrics.registerFont(TTFont(FONT, os.path.join(_FONT_DIR, 'DejaVuSans.ttf')))
+        pdfmetrics.registerFont(TTFont(FONT_BOLD, os.path.join(_FONT_DIR, 'DejaVuSans-Bold.ttf')))
     _fonts_ready = True
 
 
+_FONT_CMAP = None
+_FALLBACK_MAP = {}
+
+
+def _load_cmap(path):
+    """
+    خط دبي لا يحوي «الأشكال المعزولة» من Presentation Forms-B (مثل ﺍ ﺏ ﺓ)،
+    لكنه يحوي الحرف الأساسي نفسه (ا ب ة) وهو مطابق شكلاً؛ نحوّل إليه عند الحاجة.
+    """
+    global _FONT_CMAP, _FALLBACK_MAP
+    import unicodedata
+    from reportlab.pdfbase.ttfonts import TTFontFile
+    _FONT_CMAP = set(TTFontFile(path).charToGlyph.keys())
+    for cp in list(range(0xFB50, 0xFE00)) + list(range(0xFE70, 0xFF00)):
+        if cp in _FONT_CMAP:
+            continue
+        dec = unicodedata.decomposition(chr(cp))
+        if dec.startswith('<'):
+            parts = dec.split()[1:]
+            try:
+                base = ''.join(chr(int(x, 16)) for x in parts)
+            except ValueError:
+                continue
+            if all(ord(ch) in _FONT_CMAP for ch in base):
+                _FALLBACK_MAP[cp] = base
+
+
 # رمزا ligature للفظ الجلالة و«صلى الله عليه وسلم» (Presentation Forms-A) غير موجودين في
-# خط DejaVu فيظهران كمربع ☐؛ نعطّلهما ليُكتب النص حرفاً حرفاً (مع إبقاء وصل «لا» الصحيح).
+# بعض الخطوط فيظهران كمربع ☐؛ نعطّلهما ليُكتب النص حرفاً حرفاً (مع إبقاء وصل «لا» الصحيح).
 _reshaper = arabic_reshaper.ArabicReshaper(configuration={
     'ARABIC LIGATURE ALLAH': False,
     'ARABIC LIGATURE SALLALLAHOU ALAYHE WASALLAM': False,
@@ -68,7 +101,10 @@ _reshaper = arabic_reshaper.ArabicReshaper(configuration={
 
 def ar(text):
     """يجهّز نص عربي للعرض: وصل الأحرف ثم ترتيب الاتجاه."""
-    return get_display(_reshaper.reshape(str(text)))
+    out = get_display(_reshaper.reshape(str(text)))
+    if _FALLBACK_MAP:
+        out = out.translate(_FALLBACK_MAP)
+    return out
 
 
 def _fit(text, font, size, max_width):
@@ -232,6 +268,21 @@ def _population_section(kind, title, st):
         header_colors={3: C_PRESENT, 4: C_LATE, 5: C_ABSENT, 6: C_EXCUSED}, size=10))
     out.append(Spacer(1, 10))
 
+    if st.get('monthly'):
+        rows = [[m['label'], _pct(m['rate']), _p(m['pct_present']), _p(m['pct_late']), _p(m['pct_absent']),
+                 _p(m['pct_excused']), m['total']] for m in st['monthly']]
+        if len(st['monthly']) > 1 and st.get('monthly_avg'):
+            a = st['monthly_avg']
+            rows.append(['المتوسط الشهري', _pct(a['rate']), _p(a['pct_present']), _p(a['pct_late']),
+                         _p(a['pct_absent']), _p(a['pct_excused']), a['total']])
+        rows.append(['المجمل للفترة', _pct(st['rate']), _p(st['pct_present']), _p(st['pct_late']),
+                     _p(st['pct_absent']), _p(st['pct_excused']), st['total']])
+        out.append(_line('التفصيل الشهري', 10.5, keep=True))
+        out.append(_rtl_table(['الشهر', 'نسبة الحضور', 'حاضر', 'تأخر', 'غائب', 'إذن', 'السجلات'], rows,
+                              [115, 70, 62, 62, 62, 62, 82],
+                              header_colors={2: C_PRESENT, 3: C_LATE, 4: C_ABSENT, 5: C_EXCUSED}))
+        out.append(Spacer(1, 10))
+
     mode_lbl = {'day': 'اليومي', 'week': 'الأسبوعي', 'month': 'الشهري'}[st['chart_mode']]
     out.append(KeepTogether([_line(f'توزّع الحضور {mode_lbl} (٪)', 10.5), Spacer(1, 3),
                              _daily_chart(st['chart']), _legend()]))
@@ -248,12 +299,12 @@ def _population_section(kind, title, st):
     if kind == 'students':
         out.append(_line(f'سجل الطلاب ({st["people_total"]} طالب)', 10.5, keep=True))
         out.append(_rtl_table(
-            ['الاسم', 'الحلقة', 'العمر', 'الحضور', 'حاضر', 'تأخر', 'غائب', 'إذن'],
-            [[p['name'], p['sub'], p.get('age') if p.get('age') is not None else '—', _pct(p['rate']),
+            ['الاسم', 'الحلقة', 'العمر', 'السبر', 'الحضور', 'حاضر', 'تأخر', 'غائب', 'إذن'],
+            [[p['name'], p['sub'], p.get('age') if p.get('age') is not None else '—', p.get('sabr', 0), _pct(p['rate']),
               _p(p['pct_present']), _p(p['pct_late']), _p(p['pct_absent']), _p(p['pct_excused'])]
              for p in st['people']],
-            [130, 95, 36, 50, 51, 51, 51, 51], name_cols=(0, 1),
-            header_colors={4: C_PRESENT, 5: C_LATE, 6: C_ABSENT, 7: C_EXCUSED}))
+            [120, 90, 32, 32, 46, 48, 48, 48, 51], name_cols=(0, 1),
+            header_colors={5: C_PRESENT, 6: C_LATE, 7: C_ABSENT, 8: C_EXCUSED}))
     else:
         out.append(_line(f'سجل الكادر ({st["people_total"]})', 10.5, keep=True))
         out.append(_rtl_table(
@@ -262,6 +313,22 @@ def _population_section(kind, title, st):
              for p in st['people']],
             [215, 60, 60, 60, 60, 60],
             header_colors={2: C_PRESENT, 3: C_LATE, 4: C_ABSENT, 5: C_EXCUSED}))
+    out.append(Spacer(1, 14))
+    return out
+
+
+def _sabr_section(sb):
+    out = [_heading('السبر', 14)]
+    out.append(_rtl_table(
+        ['عدد مرات السبر', 'نسبة الطلاب الذين سُبِروا', 'سُبِروا / الطلاب', 'متوسط لكل طالب'],
+        [[sb['count'], f"{sb['pct']}%", f"{sb['done']} / {sb['students']}", sb['avg']]],
+        [120, 150, 125, 120], name_cols=(), size=10))
+    out.append(Spacer(1, 8))
+    if sb['circles']:
+        out.append(_line('حسب الحلقة', 10.5, keep=True))
+        out.append(_rtl_table(['الحلقة', 'الطلاب', 'سُبِروا', 'النسبة', 'مرات السبر'],
+                              [[r['label'], r['students'], r['done'], f"{r['pct']}%", r['count']] for r in sb['circles']],
+                              [195, 75, 75, 85, 85]))
     out.append(Spacer(1, 14))
     return out
 
@@ -311,6 +378,8 @@ def build_stats_pdf(ctx):
     ]
     if ctx['students_stats'] is not None:
         story += _population_section('students', 'الطلاب', ctx['students_stats'])
+    if ctx.get('sabr_stats'):
+        story += _sabr_section(ctx['sabr_stats'])
     if ctx['staff_stats'] is not None:
         story += _population_section('staff', 'الكادر', ctx['staff_stats'])
 

@@ -18,6 +18,32 @@
     <div class="summary-chip excused"><div class="n chip-pct">{{ st.pct_excused }}%</div><div class="l">إذن <span class="chip-sub">({{ st.excused }})</span></div></div>
   </div>
 
+  {% if st.monthly %}
+  <div class="panel">
+    <h3>📅 التفصيل الشهري</h3>
+    <div class="table-scroll">
+      <table class="admin-table month-table">
+        <thead><tr><th>الشهر</th><th>نسبة الحضور</th><th>حاضر</th><th>متأخر</th><th>غائب</th><th>بإذن</th><th>السجلات</th></tr></thead>
+        <tbody>
+          {% for m in st.monthly %}
+          <tr><td style="text-align:right">{{ m.label }}</td>
+            <td class="{% if m.rate is None %}{% elif m.rate >= 85 %}rate-good{% elif m.rate >= 65 %}rate-mid{% else %}rate-bad{% endif %}">{% if m.rate is not None %}{{ m.rate }}%{% else %}—{% endif %}</td>
+            <td>{{ m.pct_present }}%</td><td>{{ m.pct_late }}%</td><td>{{ m.pct_absent }}%</td><td>{{ m.pct_excused }}%</td><td>{{ m.total }}</td></tr>
+          {% endfor %}
+          {% if st.monthly|length > 1 %}
+          <tr class="total"><td style="text-align:right">المتوسط الشهري</td>
+            <td>{% if st.monthly_avg.rate is not None %}{{ st.monthly_avg.rate }}%{% else %}—{% endif %}</td>
+            <td>{{ st.monthly_avg.pct_present }}%</td><td>{{ st.monthly_avg.pct_late }}%</td><td>{{ st.monthly_avg.pct_absent }}%</td><td>{{ st.monthly_avg.pct_excused }}%</td><td>{{ st.monthly_avg.total }}</td></tr>
+          {% endif %}
+          <tr class="total"><td style="text-align:right">المجمل للفترة</td>
+            <td>{% if st.rate is not None %}{{ st.rate }}%{% else %}—{% endif %}</td>
+            <td>{{ st.pct_present }}%</td><td>{{ st.pct_late }}%</td><td>{{ st.pct_absent }}%</td><td>{{ st.pct_excused }}%</td><td>{{ st.total }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="panel">
     <h3>توزّع الحضور {% if st.chart_mode == 'day' %}اليومي{% elif st.chart_mode == 'week' %}الأسبوعي{% else %}الشهري{% endif %} (٪)</h3>
     {% if kind == "students" %}{{ st.chart|json_script:"students-timeline" }}{% else %}{{ st.chart|json_script:"staff-timeline" }}{% endif %}
@@ -51,23 +77,44 @@
 
   <div class="panel">
     <h3>{{ people_title }} <small style="color:#9c8a71;font-weight:400">({{ st.people_total }})</small></h3>
-    <div class="table-scroll">
-      <table class="admin-table">
-        <thead><tr><th>الاسم</th>{% if kind == "students" %}<th>العمر</th>{% endif %}<th>نسبة الحضور</th><th>التوزّع</th><th>حاضر</th><th>تأخر</th><th>غائب</th><th>إذن</th></tr></thead>
+    {% if kind == "students" %}
+    <form method="get" class="tbl-tools" action="#students-table">
+      {% for k, vals in request.GET.lists %}{% if k != 'q' and k != 'page' %}{% for v in vals %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
+      <input type="search" name="q" value="{{ q }}" placeholder="🔍 فلترة بالاسم أو الحلقة…">
+      <button type="submit" class="btn-secondary" style="padding:8px 14px">فلترة</button>
+      {% if q %}<a href="?{{ keep_qs_noq }}" class="btn-secondary" style="padding:8px 12px">✕</a>{% endif %}
+    </form>
+    {% endif %}
+    <div class="table-scroll" id="{{ kind }}-table">
+      <table class="admin-table"{% if kind != "students" %} data-pager="20"{% endif %}>
+        <thead><tr><th>الاسم</th>{% if kind == "students" %}<th>العمر</th><th>السبر</th>{% endif %}<th>نسبة الحضور</th><th>التوزّع</th><th>حاضر</th><th>تأخر</th><th>غائب</th><th>إذن</th></tr></thead>
         <tbody>
           {% for p in st.people %}
           <tr>
             <td>{% if kind == "students" %}<a href="{% url 'student_profile' p.id %}" class="student-link">{{ p.name }}</a>{% else %}<a href="{% url 'teacher_profile' p.id %}">{{ p.name }}</a>{% endif %}
                 {% if p.sub %}<div class="absence-stats"><span>{{ p.sub }}</span></div>{% endif %}</td>
-            {% if kind == "students" %}<td>{% if p.age is not None %}{{ p.age }}{% else %}<span style="color:#c9b892">—</span>{% endif %}</td>{% endif %}
+            {% if kind == "students" %}<td>{% if p.age is not None %}{{ p.age }}{% else %}<span style="color:#c9b892">—</span>{% endif %}</td><td>{{ p.sabr|default:"0" }}</td>{% endif %}
             <td class="{% if p.rate is None %}{% elif p.rate >= 85 %}rate-good{% elif p.rate >= 65 %}rate-mid{% else %}rate-bad{% endif %}">{% if p.rate is not None %}{{ p.rate }}%{% else %}—{% endif %}</td>
             <td><div class="pct-bar" title="حاضر {{ p.pct_present }}% · تأخر {{ p.pct_late }}% · غائب {{ p.pct_absent }}% · إذن {{ p.pct_excused }}%"><i class="s-present" style="width:{{ p.pct_present }}%"></i><i class="s-late" style="width:{{ p.pct_late }}%"></i><i class="s-absent" style="width:{{ p.pct_absent }}%"></i><i class="s-excused" style="width:{{ p.pct_excused }}%"></i></div></td>
             <td class="pct-cell">{{ p.pct_present }}%</td><td class="pct-cell">{{ p.pct_late }}%</td><td class="pct-cell">{{ p.pct_absent }}%</td><td class="pct-cell">{{ p.pct_excused }}%</td>
           </tr>
+          {% empty %}<tr><td colspan="9" style="text-align:center;color:#9c8a71">لا نتائج</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% if kind == "students" and st.pages > 1 %}
+    <div class="tbl-pager">
+      {% if st.page > 1 %}<a href="?{{ page_qs }}&page={{ st.page|add:'-1' }}#students-table">‹ السابق</a>{% endif %}
+      {% for n in st.page_range %}
+        {% if n == 1 or n == st.pages or n|add:'-2' <= st.page and st.page <= n|add:'2' %}
+          <a href="?{{ page_qs }}&page={{ n }}#students-table" class="{% if n == st.page %}on{% endif %}">{{ n }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if st.page < st.pages %}<a href="?{{ page_qs }}&page={{ st.page|add:'1' }}#students-table">التالي ›</a>{% endif %}
+      <span style="margin-inline-start:8px">{{ st.people_filtered }} طالب · صفحة {{ st.page }} من {{ st.pages }}</span>
+    </div>
+    {% elif kind == "students" %}<div class="tbl-pager"><span>{{ st.people_filtered }} طالب</span></div>{% endif %}
   </div>
   {% endif %}
 </div>

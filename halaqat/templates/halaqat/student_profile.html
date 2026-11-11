@@ -1,4 +1,5 @@
 {% extends "halaqat/base.html" %}
+{% load static %}
 {% block title %}{{ student.name }} - جرد الطالب{% endblock %}
 {% block content %}
 
@@ -8,7 +9,7 @@
   <h2>👤 {{ student.name }}</h2>
   <div class="desc">
     الحلقة: {{ student.circle.name }}
-    {% if student.circle.teacher %} · الأستاذ: {{ student.circle.teacher.name }}{% endif %}
+    {% if student.circle.teacher %} · الأستاذ: <a href="{% url 'teacher_profile' student.circle.teacher.id %}" class="student-link">{{ student.circle.teacher.name }}</a>{% endif %}
     {% if student.phone %} · هاتف: {{ student.phone }}{% endif %}
     · منضم منذ {{ student.joined_at|date:"Y-m-d" }}
     · {% if last_sabr %}آخر سبر: {{ last_sabr.date|date:"Y-m-d" }}{% else %}لا يوجد سبر مسجّل{% endif %}
@@ -38,6 +39,27 @@
   </div>
 </div>
 {% endif %}
+
+<div class="panel" style="margin-bottom:16px;">
+  <h3>📝 السبر</h3>
+  <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin-bottom:10px">
+    <div class="stat-card"><div class="num">{{ sabr.count }}</div><div class="lbl">عدد مرات السبر</div></div>
+    <div class="stat-card"><div class="num">{{ sabr.count_90 }}</div><div class="lbl">آخر 90 يوماً</div></div>
+    <div class="stat-card"><div class="num">{% if sabr.avg_gap is not None %}{{ sabr.avg_gap }}{% else %}—{% endif %}</div><div class="lbl">متوسط الأيام بين سبرين</div></div>
+    <div class="stat-card"><div class="num">{% if sabr.days_since_last is not None %}{{ sabr.days_since_last }}{% else %}—{% endif %}</div><div class="lbl">يوماً منذ آخر سبر</div></div>
+  </div>
+  {% if sabr.items %}
+  <div class="table-scroll">
+    <table class="admin-table" data-pager="10">
+      <thead><tr><th>التاريخ</th><th>التفاصيل والملاحظات</th></tr></thead>
+      <tbody>
+        {% for x in sabr.items %}<tr><td style="white-space:nowrap">{{ x.date|date:"Y-m-d" }}</td><td style="white-space:pre-wrap">{{ x.notes|default:"—" }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p style="font-size:13px;color:#9c8a71;margin:0">لا يوجد سبر مسجّل بعد.</p>{% endif %}
+  <a href="{% url 'sabr_page' %}" class="btn-secondary" style="margin-top:10px;display:inline-block">📝 صفحة السبر</a>
+</div>
 
 <div class="panel">
   <h3>📋 سجل الحضور التفصيلي (الحلقة الأساسية) — {{ stats.total }} سجل</h3>

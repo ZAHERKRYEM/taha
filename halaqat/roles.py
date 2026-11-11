@@ -13,7 +13,8 @@ VIEWER_GROUP = 'مشاهد'
 VIEWER_ALLOWED_URLS = {
     'login', 'logout',
     'stats_page', 'export_stats_pdf',
-    'sabr_page', 'sabr_student_info',
+    'sabr_page', 'sabr_student_info', 'sabr_add', 'sabr_update',   # المشاهد يضيف ويعدّل السبر (بدون حذف)
+    'help_page',
     'students_index',                    # قائمة الأسماء للبحث المحلي
     'student_profile', 'student_quick_stats',   # الضغط على اسم الطالب من الإحصائيات/السبر
 }
@@ -50,6 +51,42 @@ class ViewerAccessMiddleware:
         return self.get_response(request)
 
 
+# عناصر التنقّل: (اسم المسار، المفتاح active_nav، الأيقونة، النص)
+_NAV_MAIN = [
+    ('home', 'home', '🏠', 'الرئيسية'),
+    ('circles_list', 'circles', '📖', 'الحلقات'),
+    ('courses_list', 'courses', '🎓', 'الدورات'),
+    ('absentees_list', 'absentees', '🚫', 'الغائبون'),
+    ('sabr_page', 'sabr', '📝', 'السبر'),
+]
+_NAV_MORE = [
+    ('teachers_list', 'teachers', '👨‍🏫', 'الأساتذة'),
+    ('stats_page', 'stats', '📊', 'الإحصائيات'),
+    ('admin_panel', 'admin', '⚙️', 'لوحة التحكم'),
+    ('developer_page', 'developer', '🛠', 'المطور'),
+    ('help_page', 'help', '❓', 'كيفية الاستخدام'),
+]
+_NAV_VIEWER_MAIN = [
+    ('stats_page', 'stats', '📊', 'الإحصائيات'),
+    ('sabr_page', 'sabr', '📝', 'السبر'),
+]
+_NAV_VIEWER_MORE = [
+    ('help_page', 'help', '❓', 'كيفية الاستخدام'),
+]
+
+
+def _nav(items):
+    from django.urls import reverse
+    return [{'url': reverse(n), 'key': k, 'icon': i, 'label': l} for n, k, i, l in items]
+
+
 def roles_context(request):
     user = getattr(request, 'user', None)
-    return {'is_viewer': bool(user and is_viewer(user))}
+    viewer = bool(user and is_viewer(user))
+    if not (user and user.is_authenticated):
+        return {'is_viewer': False}
+    return {
+        'is_viewer': viewer,
+        'nav_main': _nav(_NAV_VIEWER_MAIN if viewer else _NAV_MAIN),
+        'nav_more': _nav(_NAV_VIEWER_MORE if viewer else _NAV_MORE),
+    }

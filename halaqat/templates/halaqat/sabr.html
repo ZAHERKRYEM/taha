@@ -37,7 +37,6 @@
       </label>
       <button id="sb-add" class="btn-primary" data-load-text="جاري التسجيل…" onclick="addSabr(this)">➕ تسجيل سبر</button>
     </div>
-    <div class="sb-hint">التاريخ الافتراضي هو اليوم، غيّره إن كان السبر في يوم آخر.</div>
     {% endif %}
   </div>
 
@@ -50,6 +49,7 @@
 <script>
 const TODAY = "{{ today|date:'Y-m-d' }}";
 const READ_ONLY = {{ read_only|yesno:"true,false" }};
+const CAN_DELETE = {{ can_delete|yesno:"true,false" }};
 let currentId = null, searchTimer = null, searchSeq = 0;
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -144,7 +144,7 @@ function render(d) {
       <input type="date" value="${h.date}" max="${TODAY}">
       <span class="sb-ago">${agoText(h.days_ago)}</span>
       <button type="button" class="qs-btn" data-act="save" title="حفظ التعديل">💾</button>
-      <button type="button" class="qs-btn" data-act="del" title="حذف">🗑</button>
+      ${CAN_DELETE ? '<button type="button" class="qs-btn" data-act="del" title="حذف">🗑</button>' : ''}
       <textarea class="sb-notes sb-row-edit" placeholder="تفاصيل السبر والملاحظات…">${esc(h.notes || '')}</textarea>
     </div>`).join('') : '<p style="font-size:13px;color:#9c8a71;margin:0">لا يوجد سجل بعد.</p>';
 }

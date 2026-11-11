@@ -1,0 +1,11 @@
+{# قائمة منسدلة متعددة الاختيار — لا تظهر إلا عند الضغط. يُمرَّر: field، placeholder #}
+<details class="dd-multi">
+  <summary><span class="dd-label" data-empty="{{ placeholder|default:'اختر…' }}">{{ placeholder|default:'اختر…' }}</span></summary>
+  <div class="dd-box">
+    <input type="search" class="dd-search" placeholder="🔍 بحث…" autocomplete="off">
+    {% for cb in field %}
+      <label>{{ cb.tag }} <span>{{ cb.choice_label }}</span></label>
+    {% empty %}<div style="font-size:12px;color:#9c8a71;padding:6px">لا توجد خيارات</div>
+    {% endfor %}
+  </div>
+</details>
