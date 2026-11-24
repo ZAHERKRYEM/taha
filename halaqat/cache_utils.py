@@ -207,6 +207,22 @@ def warm_cache_async(delay=1.5):
     return True
 
 
+def rate_limit(key, limit, window=3600):
+    """عدّاد بسيط في ذاكرة العملية: يعيد True إن كان الطلب مسموحاً (ويزيد العدّاد)، False إن بلغ الحد خلال النافذة."""
+    mem = _mem()
+    now = time.time()
+    with _lock:
+        entry = mem.get(key, None)
+        if entry is None or entry[1] <= now:
+            mem.set(key, (1, now + window), window)
+            return True
+        count, reset = entry
+        if count >= limit:
+            return False
+        mem.set(key, (count + 1, reset), max(1, int(reset - now)))
+        return True
+
+
 def status():
     """حالة الكاش لعرضها في صفحة المطور."""
     mem = _mem()

@@ -372,3 +372,29 @@ class Recitation(models.Model):
     def ayah_count(self):
         from .quran import safe_ayah_span
         return safe_ayah_span(self.from_surah, self.from_ayah, self.to_surah, self.to_ayah)
+
+
+class AssistantQuery(models.Model):
+    """سجل أسئلة المساعد الإحصائي: من سأل، وما السؤال، وما المواصفة التي نُفِّذت (للمراجعة وإعادة التشغيل بلا تكلفة)."""
+
+    VIA_CHOICES = [
+        ('ai', 'سؤال بالذكاء الاصطناعي'),
+        ('manual', 'تعديل يدوي'),
+    ]
+
+    user = models.CharField('المستخدم', max_length=150)
+    question = models.CharField('السؤال', max_length=500, blank=True, default='')
+    spec = models.TextField('المواصفة (JSON)', blank=True, default='')
+    via = models.CharField('الطريقة', max_length=10, choices=VIA_CHOICES, default='ai')
+    rows = models.PositiveIntegerField('عدد الصفوف', default=0)
+    ok = models.BooleanField('نجح', default=True)
+    error = models.CharField('الخطأ', max_length=255, blank=True, default='')
+    created_at = models.DateTimeField('الوقت', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'سؤال للمساعد'
+        verbose_name_plural = 'أسئلة المساعد الإحصائي'
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f'{self.user}: {self.question or "(تعديل يدوي)"}'

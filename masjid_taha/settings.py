@@ -153,6 +153,7 @@ MIDDLEWARE = [
     'halaqat.roles.ViewerAccessMiddleware',   # حساب «مشاهد»: الإحصائيات والسبر فقط
     'halaqat.cache_utils.WarmupMiddleware',   # احتياط للتحميل المسبق للكاش (انظر cache_utils)
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'halaqat.security.NoStoreMiddleware',     # لا تخزين لصفحات النظام في المتصفح (زر الرجوع بعد الخروج)
 ]
 
 ROOT_URLCONF = 'masjid_taha.urls'
@@ -202,3 +203,23 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL            = 'login'
 LOGIN_REDIRECT_URL   = 'home'
 LOGOUT_REDIRECT_URL  = 'login'
+
+# ── المساعد الإحصائي بالذكاء الاصطناعي (اختياري) ──────────────────────────
+# بدون المفتاح تعمل الصفحة بوضع «تعديل التفسير» اليدوي فقط. النموذج يستقبل السؤال وأسماء الحلقات فقط (لا بيانات طلاب).
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-haiku-5-5')
+ASSISTANT_RATE_LIMIT_PER_HOUR = int(os.environ.get('ASSISTANT_RATE_LIMIT_PER_HOUR', '30'))
+
+# ── أمان الجلسة وملفات الكوكيز ────────────────────────────────────────────
+# مدة بقاء تسجيل الدخول (الافتراضي أسبوعان). قلّلها على الأجهزة المشتركة: SESSION_AGE_HOURS=12
+# أو اجعل الجلسة تنتهي بإغلاق المتصفح: SESSION_EXPIRE_AT_BROWSER_CLOSE=true
+SESSION_COOKIE_AGE = int(os.environ.get('SESSION_AGE_HOURS', str(14 * 24))) * 3600
+SESSION_EXPIRE_AT_BROWSER_CLOSE = os.environ.get('SESSION_EXPIRE_AT_BROWSER_CLOSE', 'False').lower() == 'true'
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+# في الإنتاج (HTTPS على Render) لا تُرسَل الكوكيز إلا مشفّرة. للتجربة عبر http محلياً: SESSION_COOKIE_SECURE=false
+_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', str(not DEBUG)).lower() == 'true'
+SESSION_COOKIE_SECURE = _COOKIE_SECURE
+CSRF_COOKIE_SECURE = _COOKIE_SECURE
+if _COOKIE_SECURE:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')   # Render ينهي TLS عند الوسيط

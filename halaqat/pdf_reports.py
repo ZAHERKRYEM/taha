@@ -16,7 +16,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 from reportlab.graphics.shapes import Drawing, Rect, String, Line
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -181,8 +181,8 @@ def _line(text, size=9.5, color=INK, keep=False):
     return Paragraph(ar(text), st)
 
 
-def _banner(text):
-    t = Table([[ar(text)]], colWidths=[CONTENT_W])
+def _banner(text, width=CONTENT_W):
+    t = Table([[ar(text)]], colWidths=[width])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), GOLD),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
@@ -423,6 +423,137 @@ def build_stats_pdf(ctx):
         story += _sabr_section(ctx['sabr_stats'])
     if ctx['staff_stats'] is not None:
         story += _population_section('staff', 'الكادر', ctx['staff_stats'])
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------- جدول المساعد الإحصائي
+
+def _cell_text(v, kind):
+    if v is None:
+        return '—'
+    return f'{v}%' if kind == 'pct' else str(v)
+
+
+def _wrap_logical(text, font, size, width, max_lines=None):
+    """يلفّ نصاً عربياً على أسطر بالترتيب المنطقي (كل سطر يُرسم لاحقاً بـ ar() مستقلاً فيبقى الترتيب صحيحاً)."""
+    words, lines, cur = str(text).split(), [], ''
+    for w in words:
+        t = (cur + ' ' + w).strip()
+        if cur and pdfmetrics.stringWidth(ar(t), font, size) > width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = t
+    if cur:
+        lines.append(cur)
+    lines = lines or ['']
+    return lines[:max_lines] if max_lines else lines
+
+
+def build_table_pdf(result):
+    """
+    PDF لجدول نتيجة المساعد الإحصائي (من اليمين لليسار). يتحوّل تلقائياً إلى صفحة أفقية عند كثرة الأعمدة،
+    ويقسّم الأعمدة الكثيرة جداً على عدة جداول مع تكرار الأعمدة النصيّة الأولى.
+    result: {title, understood, columns:[{key,label,kind}], rows, summary, notes, period}
+    """
+    _register_fonts()
+    cols, rows, summary = result['columns'], result['rows'], result.get('summary')
+    wide = len(cols) > 7
+    pagesize = landscape(A4) if wide else A4
+    pw, ph = pagesize
+    content_w = pw - 2 * MARGIN
+    size = 8.5 if len(cols) > 10 else 9
+    buf = io.BytesIO()
+
+    def footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(FONT, 8)
+        canvas.setFillColor(colors.grey)
+        canvas.drawCentredString(pw / 2, 22, ar(f'صفحة {doc.page}'))
+        canvas.drawRightString(pw - MARGIN, 22, ar('مسجد طه — المساعد الإحصائي'))
+        canvas.setStrokeColor(LINE)
+        canvas.line(MARGIN, 34, pw - MARGIN, 34)
+        canvas.restoreState()
+
+    doc = BaseDocTemplate(buf, pagesize=pagesize, leftMargin=MARGIN, rightMargin=MARGIN,
+                          topMargin=MARGIN, bottomMargin=48, title=result['title'], author='مسجد طه')
+    doc.addPageTemplates([PageTemplate(
+        id='main', onPage=footer,
+        frames=[Frame(MARGIN, 48, content_w, ph - MARGIN - 48, id='f',
+                      leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)])])
+
+    story = [_banner(result['title'], content_w), Spacer(1, 8)]
+    for part in str(result.get('understood') or '').split(' · '):
+        if part.strip():
+            story.append(_line(part.strip(), 10))
+    story.append(_line(f'تاريخ إنشاء التقرير: {datetime.datetime.now():%Y-%m-%d %H:%M}', 8.5, colors.grey))
+    story.append(Spacer(1, 8))
+
+    lead = [i for i, c in enumerate(cols) if c['kind'] == 'text']
+    rest = [i for i in range(len(cols)) if i not in lead]
+    max_cols = 14 if wide else 8
+    per_table = max(1, max_cols - len(lead))
+    chunks = [rest[i:i + per_table] for i in range(0, len(rest), per_table)] or [[]]
+
+    def natural_width(i):
+        c = cols[i]
+        texts = [_cell_text(r[i], c['kind']) for r in rows[:150]] + ([_cell_text(summary[i], c['kind'])] if summary else [])
+        body = max([pdfmetrics.stringWidth(ar(t), FONT, size) for t in texts] + [20])
+        head = max(pdfmetrics.stringWidth(ar(w), FONT_BOLD, size) for w in str(c['label']).split() or [''])
+        w = max(body, head) + 14
+        return min(max(w, 38), 160 if c['kind'] == 'text' else 70)
+
+    for chunk in chunks:
+        idx = lead + chunk
+        widths = [natural_width(i) for i in idx]
+        total = sum(widths)
+        if total > content_w:
+            widths = [w * content_w / total for w in widths]
+        elif total < content_w * 0.7:
+            widths = [w * min(1.35, content_w * 0.9 / total) for w in widths]
+
+        def head_cell(i, w):
+            lines = _wrap_logical(cols[i]['label'], FONT_BOLD, size, w - 8)
+            return '\n'.join(ar(x) for x in lines)
+
+        def data_cell(i, v, w):
+            c = cols[i]
+            if c['kind'] == 'text':
+                return ar(_fit(v if v is not None else '—', FONT, size, w - 10))
+            return _cell_text(v, c['kind'])
+
+        header = [head_cell(i, w) for i, w in zip(idx, widths)]
+        body = [[data_cell(i, r[i], w) for i, w in zip(idx, widths)] for r in rows]
+        if summary:
+            body.append([data_cell(i, summary[i], w) for i, w in zip(idx, widths)])
+        data = [header[::-1]] + [r[::-1] for r in body]
+        t = Table(data, colWidths=widths[::-1], repeatRows=1)
+        style = [
+            ('FONTNAME', (0, 0), (-1, -1), FONT), ('FONTNAME', (0, 0), (-1, 0), FONT_BOLD),
+            ('FONTSIZE', (0, 0), (-1, -1), size), ('TEXTCOLOR', (0, 0), (-1, -1), INK),
+            ('BACKGROUND', (0, 0), (-1, 0), GOLD), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LINEBELOW', (0, 0), (-1, -1), 0.4, LINE), ('BOX', (0, 0), (-1, -1), 0.6, LINE),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1 - (1 if summary else 0)), [colors.white, SOFT]),
+        ]
+        n = len(idx)
+        for pos, i in enumerate(idx):
+            if cols[i]['kind'] == 'text':
+                style.append(('ALIGN', (n - 1 - pos, 1), (n - 1 - pos, -1), 'RIGHT'))
+                style.append(('RIGHTPADDING', (n - 1 - pos, 0), (n - 1 - pos, -1), 8))
+        if summary:
+            style += [('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F1E6D3')),
+                      ('FONTNAME', (0, -1), (-1, -1), FONT_BOLD), ('LINEABOVE', (0, -1), (-1, -1), 1, GOLD)]
+        t.setStyle(TableStyle(style))
+        story.append(t)
+        story.append(Spacer(1, 10))
+
+    for note in result.get('notes') or []:
+        for ln in _wrap_logical(note, FONT, 8.5, content_w - 6):
+            story.append(_line(ln, 8.5, colors.grey))
 
     doc.build(story)
     return buf.getvalue()

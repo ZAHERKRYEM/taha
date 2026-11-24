@@ -51,6 +51,7 @@
   <button type="submit" class="btn-primary st-apply">🔎 عرض</button>
   <a href="{% url 'export_stats_pdf' %}?{{ request.GET.urlencode }}"
      class="btn-primary st-pdf" onclick="showToast('📄 جاري إنشاء التقرير…','info',3000)">📄 تصدير PDF</a>
+  {% if not is_viewer %}<a href="{% url 'stats_assistant' %}" class="btn-primary st-pdf" style="background:linear-gradient(135deg,#6B8CAE,#4f6f8f)">🤖 المساعد الإحصائي</a>{% endif %}
 </form>
 {% if not has_birth_dates and sort == 'age' or not has_birth_dates and age_min is not None or not has_birth_dates and age_max is not None %}
 <div class="panel" style="font-size:13px;color:#9c8a71">ℹ️ لم يُدخَل تاريخ الميلاد لأي طالب بعد — أضفه من «لوحة التحكم ← تعديل الطالب» أو عبر استيراد Excel ليعمل الفرز/الفلترة حسب العمر.</div>

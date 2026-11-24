@@ -1,6 +1,8 @@
 import csv
 import datetime
 import io
+import json
+import logging
 import re
 from random import randint
 import threading
@@ -17,10 +19,10 @@ from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.http import require_POST
 
-from . import cache_utils, quran
+from . import ai_export, ai_query, cache_utils, quran
 from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
-    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr, Recitation,
+    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr, Recitation, AssistantQuery,
 )
 from .forms import CircleForm, StudentForm, CourseForm, WhatsAppAbsentForm, ViewerAccountForm
 from .roles import VIEWER_GROUP, is_viewer
@@ -2599,3 +2601,132 @@ def recitation_delete(request, rec_id):
     _log_admin_action(request, f'🗑 حذف تسميع {student.name}: {rec.range_display} بتاريخ {rec.date}')
     rec.delete()
     return JsonResponse(_recitation_payload(student, _parse_iso(request.POST.get('ctx_date'))))
+
+
+# ============================================================
+#  المساعد الإحصائي (ذكاء اصطناعي): سؤال بالعربية ⇒ جدول + تصدير Excel / PDF
+#  النموذج يحوّل السؤال إلى مواصفة منظّمة فقط؛ التنفيذ بمحرّك الإحصائيات نفسه (راجع ai_query.py).
+# ============================================================
+
+_assistant_log_ = logging.getLogger('halaqat.assistant')
+
+
+def _assistant_log(request, question, spec, via, rows, ok, error=''):
+    try:
+        user = request.user.get_username()[:150]
+        spec_json = ai_query.spec_to_json(spec) if spec else ''
+        if via == 'manual' and spec_json:                # إعادة تشغيل مطابقة لآخر استعلام لا تُسجَّل مرة ثانية
+            last = AssistantQuery.objects.filter(user=user).order_by('-id').values_list('spec', flat=True)[:1]
+            if list(last) == [spec_json]:
+                return
+        AssistantQuery.objects.create(
+            user=user, question=(question or '')[:500],
+            spec=spec_json, via=via, rows=rows, ok=ok, error=(error or '')[:255])
+    except Exception:                                   # السجل لا يجب أن يعطّل الإجابة
+        _assistant_log_.exception('تعذّر حفظ سجل سؤال المساعد')
+
+
+def _assistant_spec_from_post(request):
+    raw = request.POST.get('spec', '')
+    if not raw or len(raw) > 20000:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+@login_required
+def stats_assistant_page(request):
+    circles = [{'id': c['id'], 'name': c['name']} for c in cache_utils.circles()]
+    history = [{
+        'id': h.id, 'question': h.question, 'spec': h.spec, 'via': h.via, 'ok': h.ok,
+        'when': timezone.localtime(h.created_at).strftime('%Y-%m-%d %H:%M'),
+    } for h in AssistantQuery.objects.filter(user=request.user.get_username()).order_by('-created_at', '-id')[:12] if h.spec]
+    return render(request, 'halaqat/stats_assistant.html', {
+        'active_nav': 'stats',
+        'ai_enabled': bool(getattr(settings, 'ANTHROPIC_API_KEY', '')),
+        'meta': ai_query.ui_meta(circles),
+        'examples': ai_query.EXAMPLES,
+        'history': history,
+    })
+
+
+def _assistant_run_response(request, raw, question, via):
+    today = timezone.localdate()
+    spec, warnings = ai_query.validate_spec(raw, cache_utils.circles(), today)
+    try:
+        result = ai_query.run_spec(spec)
+    except Exception:
+        _assistant_log_.exception('فشل تنفيذ استعلام المساعد: %s', spec)
+        _assistant_log(request, question, spec, via, 0, False, 'خطأ أثناء التنفيذ')
+        return JsonResponse({'ok': False, 'error': 'تعذّر تنفيذ الاستعلام. جرّب تبسيط السؤال أو عدّل التفسير يدوياً.'}, status=500)
+    _assistant_log(request, question, spec, via, result['row_count'], True)
+    return JsonResponse({'ok': True, 'spec': spec, 'result': result, 'warnings': warnings})
+
+
+@login_required
+@require_POST
+def stats_assistant_ask(request):
+    """سؤال بالذكاء الاصطناعي: السؤال ⇒ مواصفة ⇒ جدول (النموذج لا يرى أي بيانات طلاب)."""
+    question = (request.POST.get('question') or '').strip()
+    if not question:
+        return JsonResponse({'ok': False, 'error': 'اكتب سؤالك أولاً'}, status=400)
+    if len(question) > 500:
+        return JsonResponse({'ok': False, 'error': 'السؤال طويل (الحد 500 حرف)'}, status=400)
+    api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return JsonResponse({'ok': False, 'code': 'no_key',
+                             'error': 'ميزة السؤال بالذكاء الاصطناعي غير مفعّلة (لم يُضبط ANTHROPIC_API_KEY). استخدم «بناء يدوي».'}, status=503)
+    limit = getattr(settings, 'ASSISTANT_RATE_LIMIT_PER_HOUR', 30)
+    if not cache_utils.rate_limit(f'assistant:{request.user.get_username()}', limit):
+        return JsonResponse({'ok': False, 'code': 'rate',
+                             'error': f'بلغتَ الحد ({limit} سؤالاً في الساعة). جرّب لاحقاً أو استخدم «بناء يدوي».'}, status=429)
+    circles = cache_utils.circles()
+    try:
+        raw = ai_query.ask_llm(question, timezone.localdate(), [c['name'] for c in circles], api_key,
+                               getattr(settings, 'ANTHROPIC_MODEL', 'claude-haiku-5-5'))
+    except ai_query.AssistantError as e:
+        _assistant_log(request, question, None, 'ai', 0, False, e.message)
+        return JsonResponse({'ok': False, 'code': e.code, 'error': e.message}, status=502 if e.code in ('network', 'api') else 400)
+    if raw.get('unsupported'):
+        reason = str(raw.get('reason') or 'السؤال خارج نطاق الإحصائيات المدعومة (حضور، سبر، تسميع).')[:200]
+        _assistant_log(request, question, None, 'ai', 0, False, reason)
+        return JsonResponse({'ok': False, 'code': 'unsupported', 'error': reason})
+    return _assistant_run_response(request, raw, question, 'ai')
+
+
+@login_required
+@require_POST
+def stats_assistant_run(request):
+    """تشغيل مواصفة (من «تعديل التفسير» أو من سجل الأسئلة) دون أي استدعاء للذكاء الاصطناعي."""
+    data = _assistant_spec_from_post(request)
+    if data is None:
+        return JsonResponse({'ok': False, 'error': 'مواصفة غير صالحة'}, status=400)
+    return _assistant_run_response(request, data, '', 'manual')
+
+
+@login_required
+@require_POST
+def stats_assistant_export(request, fmt):
+    """تصدير نتيجة المواصفة نفسها إلى Excel أو PDF (تُعاد المعالجة فتتطابق مع الجدول المعروض)."""
+    from django.http import Http404
+    from urllib.parse import quote
+    if fmt not in ('xlsx', 'pdf'):
+        raise Http404
+    data = _assistant_spec_from_post(request)
+    if data is None:
+        return HttpResponse('مواصفة غير صالحة', status=400)
+    spec, _warnings = ai_query.validate_spec(data, cache_utils.circles(), timezone.localdate())
+    result = ai_query.run_spec(spec)
+    stamp = timezone.localtime().strftime('%Y%m%d_%H%M')
+    if fmt == 'xlsx':
+        content, ctype = ai_export.build_xlsx(result), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    else:
+        from .pdf_reports import build_table_pdf
+        content, ctype = build_table_pdf(result), 'application/pdf'
+    response = HttpResponse(content, content_type=ctype)
+    response['Content-Disposition'] = (f'attachment; filename="masjid_taha_stats_{stamp}.{fmt}"; '
+                                       f"filename*=UTF-8''{quote(result['title'])}_{stamp}.{fmt}")
+    return response

@@ -1,0 +1,98 @@
+{% extends "halaqat/base.html" %}
+{% load static %}
+{% block title %}المساعد الإحصائي — مسجد طه{% endblock %}
+{% block content %}
+
+<a href="{% url 'stats_page' %}" class="back-link">→ رجوع للإحصائيات</a>
+
+<div class="page-header">
+  <h2>🤖 المساعد الإحصائي</h2>
+  <div class="desc">اسأل عن الحضور والسبر والتسميع بجملة عادية، فيبني لك جدولاً يمكن تصديره Excel أو PDF.</div>
+</div>
+
+{% if not ai_enabled %}
+<div class="ai-note">
+  ⚠️ السؤال بالذكاء الاصطناعي غير مفعّل بعد (لم يُضبط <b>ANTHROPIC_API_KEY</b> في إعدادات الخادم).
+  يمكنك الآن استخدام <b>«⚙️ بناء يدوي»</b> بنفس الجدول والتصدير.
+</div>
+{% endif %}
+
+<div class="panel ai-ask">
+  <textarea id="ai-q" rows="2" maxlength="500" placeholder="مثال: من هم الطلاب الأكثر غياباً هذا الشهر؟"{% if not ai_enabled %} disabled{% endif %}></textarea>
+  <div class="ai-ask-row">
+    <button type="button" class="btn-primary" id="ai-go" data-load-text="جاري التحليل…"{% if not ai_enabled %} disabled{% endif %}>🔎 اسأل</button>
+    <button type="button" class="btn-secondary" id="ai-manual">⚙️ بناء يدوي</button>
+  </div>
+  <div class="ai-examples">
+    {% for ex in examples %}<button type="button" class="ai-chip" data-q="{{ ex }}"{% if not ai_enabled %} disabled{% endif %}>{{ ex }}</button>{% endfor %}
+  </div>
+  <div class="ai-privacy">🔒 يُرسَل نص سؤالك وأسماء الحلقات فقط إلى الذكاء الاصطناعي — لا قوائم طلاب ولا بيانات حضور. الحساب كله يتم داخل نظامك.</div>
+</div>
+
+<div id="ai-error" class="ai-error" hidden></div>
+
+<div id="ai-work" hidden>
+  <div class="panel" id="ai-understood-box" hidden>
+    <div class="ai-understood"><b>🧭 كيف فهمتُ سؤالك</b><div id="ai-understood"></div></div>
+    <div id="ai-warnings"></div>
+  </div>
+
+  <details class="panel ai-edit" id="ai-edit">
+    <summary>✏️ تعديل التفسير</summary>
+    <div class="ai-form">
+      <div class="ai-row">
+        <label>الفئة <select id="f-subject"></select></label>
+        <label>التجميع <select id="f-group"></select></label>
+      </div>
+      <div class="ai-field"><span>الأعمدة</span><div id="f-metrics" class="ai-checks"></div></div>
+      <div class="ai-row">
+        <label>من تاريخ <input type="date" id="f-from"></label>
+        <label>إلى تاريخ <input type="date" id="f-to"></label>
+      </div>
+      <div class="ai-field" id="f-circles-wrap"><span>الحلقات (اتركها فارغة لكل المسجد)</span><div id="f-circles" class="ai-checks scroll"></div></div>
+      <div class="ai-row" id="f-person-wrap">
+        <label>الاسم يحوي <input type="text" id="f-name" maxlength="60" autocomplete="off"></label>
+        <label>العمر من <input type="number" id="f-agemin" min="0" max="100" inputmode="numeric"></label>
+        <label>إلى <input type="number" id="f-agemax" min="0" max="100" inputmode="numeric"></label>
+      </div>
+      <label class="ai-inline" id="f-monthly-wrap"><input type="checkbox" id="f-monthly"> إضافة عمود متوسط لكل شهر</label>
+      <div class="ai-field"><span>شروط</span><div id="f-conds"></div><button type="button" class="qs-btn" id="f-addcond">＋ إضافة شرط</button></div>
+      <div class="ai-row">
+        <label>الترتيب حسب <select id="f-sort"></select></label>
+        <label>الاتجاه <select id="f-dir"><option value="desc">تنازلي</option><option value="asc">تصاعدي</option></select></label>
+        <label>عدد الصفوف <input type="number" id="f-limit" min="1" max="500" value="50" inputmode="numeric"></label>
+      </div>
+      <button type="button" class="btn-primary" id="f-run" data-load-text="جاري التنفيذ…">▶ تشغيل</button>
+    </div>
+  </details>
+
+  <div class="panel" id="ai-result" hidden>
+    <div class="ai-tools">
+      <div>
+        <h3 id="ai-title"></h3>
+        <div class="ai-meta" id="ai-meta"></div>
+      </div>
+      <div class="ai-export">
+        <button type="button" class="btn-secondary" id="ai-xlsx">📊 Excel</button>
+        <button type="button" class="btn-secondary" id="ai-pdf">📄 PDF</button>
+      </div>
+    </div>
+    <div class="table-scroll"><table class="admin-table ai-table" id="ai-table"></table></div>
+    <div id="ai-notes" class="ai-notes"></div>
+  </div>
+</div>
+
+<div class="panel" id="ai-history-box">
+  <h3>🕘 أسئلتي الأخيرة</h3>
+  <div id="ai-history"></div>
+</div>
+
+{{ meta|json_script:"ai-meta-data" }}
+{{ history|json_script:"ai-history-data" }}
+<div id="ai-root" hidden
+     data-ask="{% url 'stats_assistant_ask' %}" data-run="{% url 'stats_assistant_run' %}"
+     data-xlsx="{% url 'stats_assistant_export' 'xlsx' %}" data-pdf="{% url 'stats_assistant_export' 'pdf' %}"
+     data-ai="{% if ai_enabled %}1{% else %}0{% endif %}"></div>
+<script src="{% static 'halaqat/js/stats_assistant.js' %}?v=1"></script>
+
+{% endblock %}

@@ -3,7 +3,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
+    path('', auth_views.LoginView.as_view(template_name='registration/login.html', redirect_authenticated_user=True), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
 
     path('home/', views.home, name='home'),
@@ -65,6 +65,12 @@ urlpatterns = [
     path('admin-panel/sort-students/move/', views.sort_students_move, name='sort_students_move'),
 
     # ── التسميع (القرآن الكريم) حلقةً حلقة ──
+    # ── المساعد الإحصائي (ذكاء اصطناعي) ──
+    path('stats/assistant/', views.stats_assistant_page, name='stats_assistant'),
+    path('stats/assistant/ask/', views.stats_assistant_ask, name='stats_assistant_ask'),
+    path('stats/assistant/run/', views.stats_assistant_run, name='stats_assistant_run'),
+    path('stats/assistant/export/<str:fmt>/', views.stats_assistant_export, name='stats_assistant_export'),
+
     path('recitation/', views.recitation_page, name='recitation_page'),
     path('recitation/student/<int:student_id>/', views.recitation_student_info, name='recitation_student_info'),
     path('recitation/student/<int:student_id>/add/', views.recitation_add, name='recitation_add'),

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Teacher, Circle, Student, Attendance, TeacherAttendance,
-    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr, Recitation,
+    Course, CourseAttendance, CourseTeacherAttendance, TeacherDailyAttendance, Sabr, Recitation, AssistantQuery,
 )
 
 
@@ -83,3 +83,11 @@ class RecitationAdmin(admin.ModelAdmin):
     list_filter = ('circle', 'kind', 'grade', 'date')
     search_fields = ('student__name',)
     date_hierarchy = 'date'
+
+
+@admin.register(AssistantQuery)
+class AssistantQueryAdmin(admin.ModelAdmin):
+    list_display = ('user', 'question', 'via', 'rows', 'ok', 'created_at')
+    list_filter = ('via', 'ok', 'user')
+    search_fields = ('question', 'user')
+    readonly_fields = ('created_at',)
